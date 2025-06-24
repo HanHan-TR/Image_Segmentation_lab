@@ -1,4 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import warnings
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,7 +17,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from utils import add_prefix, resize
-from core.registry import SEGMENTOR, DECODEHEAD, build_from_cfg
+from core.registry import BACKBONE, SEGMENTOR, NECK, DECODEHEAD, build_from_cfg
 from .base import BaseSegmentor
 
 
@@ -38,24 +40,29 @@ class EncoderDecoder(BaseSegmentor):
                  pretrained=None,
                  init_cfg=None):
         super(EncoderDecoder, self).__init__(init_cfg)
+        assert not (init_cfg and pretrained), \
+            'init_cfg and pretrained cannot be setting at the same time'
         if pretrained is not None:
+            if isinstance(pretrained, str):
+                self.init_cfg = dict(type='PretrainedInit', checkpoint=pretrained)
             assert backbone.get('pretrained') is None, \
                 'both backbone and segmentor set pretrained weight'
-            backbone.pretrained = pretrained
-        self.backbone = builder.build_backbone(backbone)
+            # backbone.pretrained = pretrained
+        self.backbone = build_from_cfg(cfg=backbone, registry=BACKBONE)
         if neck is not None:
-            self.neck = builder.build_neck(neck)
+            self.neck = build_from_cfg(cfg=neck, registry=NECK)
         self._init_decode_head(decode_head)
         self._init_auxiliary_head(auxiliary_head)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 
-        assert self.with_decode_head
+        assert self.with_decode_head, 'EncoderDecoder Segmentor must have the decode head.'
+        self.init_weights()
 
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
-        self.decode_head = builder.build_head(decode_head)
+        self.decode_head = build_from_cfg(decode_head, registry=DECODEHEAD)
         self.align_corners = self.decode_head.align_corners
         self.num_classes = self.decode_head.num_classes
         self.out_channels = self.decode_head.out_channels
@@ -66,9 +73,9 @@ class EncoderDecoder(BaseSegmentor):
             if isinstance(auxiliary_head, list):
                 self.auxiliary_head = nn.ModuleList()
                 for head_cfg in auxiliary_head:
-                    self.auxiliary_head.append(builder.build_head(head_cfg))
+                    self.auxiliary_head.append(build_from_cfg(head_cfg, registry=DECODEHEAD))
             else:
-                self.auxiliary_head = builder.build_head(auxiliary_head)
+                self.auxiliary_head = build_from_cfg(auxiliary_head, registry=DECODEHEAD)
 
     def extract_feat(self, img):
         """Extract features from images."""

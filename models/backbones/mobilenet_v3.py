@@ -3,6 +3,7 @@ import warnings
 import sys
 import os
 from pathlib import Path
+from torch.nn.modules.batchnorm import _BatchNorm
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[2]  # root directory
@@ -11,17 +12,15 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-import mmcv
-from mmcv.cnn import ConvModule
-from mmcv.cnn.bricks import Conv2dAdaptivePadding
-from mmcv.runner import BaseModule
-from torch.nn.modules.batchnorm import _BatchNorm
+from models.common import ConvModule, BaseModule
+from models.common import Conv2dAdaptivePadding
+from models.utils import InvertedResidualV3 as InvertedResidual
 
-from ..builder import BACKBONES
-from ..utils import InvertedResidualV3 as InvertedResidual
+from core.fileio import is_tuple_of
+from core.registry import BACKBONE
 
 
-@BACKBONES.register_module()
+@BACKBONE.register()
 class MobileNetV3(BaseModule):
     """MobileNetV3 backbone.
 
@@ -114,7 +113,7 @@ class MobileNetV3(BaseModule):
 
         assert arch in self.arch_settings
         assert isinstance(reduction_factor, int) and reduction_factor > 0
-        assert mmcv.is_tuple_of(out_indices, int)
+        assert is_tuple_of(out_indices, int)
         for index in out_indices:
             if index not in range(0, len(self.arch_settings[arch]) + 2):
                 raise ValueError(
@@ -135,6 +134,7 @@ class MobileNetV3(BaseModule):
         self.norm_eval = norm_eval
         self.with_cp = with_cp
         self.layers = self._make_layer()
+        self.init_weights()
 
     def _make_layer(self):
         layers = []

@@ -8,8 +8,18 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
+import sys
+import os
+from pathlib import Path
 
-from mmcv.runner import BaseModule, auto_fp16
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from models.common import BaseModule
 
 
 class BaseSegmentor(BaseModule, metaclass=ABCMeta):
@@ -95,7 +105,6 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         else:
             return self.aug_test(imgs, img_metas, **kwargs)
 
-    @auto_fp16(apply_to=('img', ))
     def forward(self, img, img_metas, return_loss=True, **kwargs):
         """Calls either :func:`forward_train` or :func:`forward_test` depending
         on whether ``return_loss`` is ``True``.
@@ -200,9 +209,9 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         if dist.is_available() and dist.is_initialized():
             log_var_length = torch.tensor(len(log_vars), device=loss.device)
             dist.all_reduce(log_var_length)
-            message = (f'rank {dist.get_rank()}' +
-                       f' len(log_vars): {len(log_vars)}' + ' keys: ' +
-                       ','.join(log_vars.keys()) + '\n')
+            message = (f'rank {dist.get_rank()}'
+                       + f' len(log_vars): {len(log_vars)}' + ' keys: '
+                       + ','.join(log_vars.keys()) + '\n')
             assert log_var_length == len(log_vars) * dist.get_world_size(), \
                 'loss log variables are different across GPUs!\n' + message
 

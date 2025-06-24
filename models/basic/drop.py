@@ -1,6 +1,19 @@
 import torch
 import torch.nn as nn
 
+import sys
+import os
+from pathlib import Path
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from core.registry import DROPOUT
+
 
 def drop_path(x, drop_prob=0., training=False):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of
@@ -20,6 +33,7 @@ def drop_path(x, drop_prob=0., training=False):
     return output
 
 
+@DROPOUT.register()
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of
     residual blocks).
@@ -39,16 +53,31 @@ class DropPath(nn.Module):
         return drop_path(x, self.drop_prob, self.training)
 
 
-class Dropout(nn.Dropout):
-    """A wrapper for ``torch.nn.Dropout``, We rename the ``p`` of
-    ``torch.nn.Dropout`` to ``drop_prob`` so as to be consistent with
-    ``DropPath``
+@DROPOUT.register()
+def Dropout(*args, **kwargs):
+    return nn.Dropout(*args, **kwargs)
 
-    Args:
-        drop_prob (float): Probability of the elements to be
-            zeroed. Default: 0.5.
-        inplace (bool):  Do the operation inplace or not. Default: False.
-    """
 
-    def __init__(self, drop_prob=0.5, inplace=False):
-        super().__init__(p=drop_prob, inplace=inplace)
+@DROPOUT.register()
+def Dropout1d(*args, **kwargs):
+    return nn.Dropout1d(*args, **kwargs)
+
+
+@DROPOUT.register()
+def Dropout2d(*args, **kwargs):
+    return nn.Dropout2d(*args, **kwargs)
+
+
+@DROPOUT.register()
+def Dropout3d(*args, **kwargs):
+    return nn.Dropout3d(*args, **kwargs)
+
+
+@DROPOUT.register()
+def AlphaDropout(*args, **kwargs):
+    return nn.AlphaDropout(*args, **kwargs)
+
+
+@DROPOUT.register()
+def FeatureAlphaDropout(*args, **kwargs):
+    return nn.FeatureAlphaDropout(*args, **kwargs)

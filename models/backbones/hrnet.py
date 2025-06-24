@@ -2,6 +2,7 @@
 import warnings
 
 import torch.nn as nn
+from torch.nn.modules.batchnorm import _BatchNorm
 
 import sys
 import os
@@ -14,13 +15,10 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from mmcv.cnn import build_conv_layer, build_norm_layer
-from mmcv.runner import BaseModule, ModuleList, Sequential
-from mmcv.utils.parrots_wrapper import _BatchNorm
-
-from mmseg.ops import Upsample, resize
-from ..builder import BACKBONES
-from .resnet import BasicBlock, Bottleneck
+from models.common import BaseModule, ModuleList, Sequential
+from models.backbones.resnet import BasicBlock, Bottleneck
+from utils import Upsample, resize
+from core.registry import build_conv_layer, build_norm_layer, BACKBONE
 
 
 class HRModule(BaseModule):
@@ -58,6 +56,7 @@ class HRModule(BaseModule):
                                             num_channels)
         self.fuse_layers = self._make_fuse_layers()
         self.relu = nn.ReLU(inplace=False)
+        self.init_weights()
 
     def _check_branches(self, num_branches, num_blocks, in_channels,
                         num_channels):
@@ -226,7 +225,7 @@ class HRModule(BaseModule):
         return x_fuse
 
 
-@BACKBONES.register_module()
+@BACKBONE.register()
 class HRNet(BaseModule):
     """HRNet backbone.
 

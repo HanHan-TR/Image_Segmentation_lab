@@ -6,8 +6,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..builder import LOSSES
-from .utils import get_class_weight, weighted_loss
+import sys
+import os
+from pathlib import Path
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from models.losses.utils import get_class_weight, weighted_loss
+from core.registry import LOSS
 
 
 @weighted_loss
@@ -57,7 +68,7 @@ def binary_tversky_loss(pred,
     return 1 - tversky
 
 
-@LOSSES.register_module()
+@LOSS.register()
 class TverskyLoss(nn.Module):
     """TverskyLoss. This loss is proposed in `Tversky loss function for image
     segmentation using 3D fully convolutional deep networks.

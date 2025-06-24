@@ -5,8 +5,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..builder import LOSSES
-from .utils import get_class_weight, weighted_loss
+import sys
+import os
+from pathlib import Path
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from models.losses.utils import get_class_weight, weighted_loss
+from core.registry import LOSS
 
 
 @weighted_loss
@@ -47,7 +58,7 @@ def binary_dice_loss(pred, target, valid_mask, smooth=1, exponent=2, **kwargs):
     return 1 - num / den
 
 
-@LOSSES.register_module()
+@LOSS.register()
 class DiceLoss(nn.Module):
     """DiceLoss.
 

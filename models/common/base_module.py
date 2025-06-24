@@ -30,7 +30,7 @@ class BaseModule(nn.Module):
         super(BaseModule, self).__init__()
         # define default value of init_cfg instead of hard code
         # in init_weights() function
-        self._is_init = False
+        self._is_Pretrainedinit = False
 
         self.init_cfg = copy.deepcopy(init_cfg)
 
@@ -41,20 +41,21 @@ class BaseModule(nn.Module):
         #     self.init_cfg = dict(type='Pretrained', checkpoint=pretrained)
 
     @property
-    def is_init(self):
-        return self._is_init
+    def is_Pretrainedinit(self):
+        return self._is_Pretrainedinit
 
     def init_weights(self):
         """Initialize the weights."""
 
         from core.initialize import initialize
 
-        if not self._is_init:
+        if not self._is_Pretrainedinit:
             if self.init_cfg:
                 initialize(self, self.init_cfg)
                 if isinstance(self.init_cfg, dict):
                     # prevent the parameters of the pre-trained model from being overwritten by the `init_weights`
-                    if self.init_cfg['type'] == 'Pretrained':
+                    if self.init_cfg['type'] == 'PretrainedInit':
+                        self._is_Pretrainedinit = True
                         return
 
             for m in self.children():
@@ -62,7 +63,6 @@ class BaseModule(nn.Module):
                     m.init_weights()
                     # users may overload the `init_weights`
 
-            self._is_init = True
         else:
             warnings.warn(f'init_weights of {self.__class__.__name__} has '
                           f'been called more than once.')

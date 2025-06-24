@@ -19,28 +19,124 @@ from models.basic.drop import DropPath
 from models.common.base_module import BaseModule
 
 
-class InvertedResidual(BaseModule):
-    """Inverted Residual Block.
+class InvertedResidual(nn.Module):
+    """InvertedResidual block for MobileNetV2.
 
     Args:
-        in_channels (int): The input channels of this module.
-        out_channels (int): The output channels of this module.
+        in_channels (int): The input channels of the InvertedResidual block.
+        out_channels (int): The output channels of the InvertedResidual block.
+        stride (int): Stride of the middle (first) 3x3 convolution.
+        expand_ratio (int): Adjusts number of channels of the hidden layer
+            in InvertedResidual by this amount.
+        dilation (int): Dilation rate of depthwise conv. Default: 1
+        conv_cfg (dict): Config dict for convolution layer.
+            Default: None, which means using conv2d.
+        norm_cfg (dict): Config dict for normalization layer.
+            Default: dict(type='BN').
+        act_cfg (dict): Config dict for activation layer.
+            Default: dict(type='ReLU6').
+        with_cp (bool): Use checkpoint or not. Using checkpoint will save some
+            memory while slowing down the training speed. Default: False.
+
+    Returns:
+        Tensor: The output tensor.
+    """
+
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 stride,
+                 expand_ratio,
+                 dilation=1,
+                 conv_cfg=None,
+                 norm_cfg=dict(type='BN'),
+                 act_cfg=dict(type='ReLU6'),
+                 with_cp=False,
+                 **kwargs):
+        super(InvertedResidual, self).__init__()
+        self.stride = stride
+        assert stride in [1, 2], f'stride must in [1, 2]. ' \
+            f'But received {stride}.'
+        self.with_cp = with_cp
+        self.use_res_connect = self.stride == 1 and in_channels == out_channels
+        hidden_dim = int(round(in_channels * expand_ratio))
+
+        layers = []
+        if expand_ratio != 1:
+            layers.append(
+                ConvModule(
+                    in_channels=in_channels,
+                    out_channels=hidden_dim,
+                    kernel_size=1,
+                    conv_cfg=conv_cfg,
+                    norm_cfg=norm_cfg,
+                    act_cfg=act_cfg,
+                    **kwargs))
+        layers.extend([
+            ConvModule(
+                in_channels=hidden_dim,
+                out_channels=hidden_dim,
+                kernel_size=3,
+                stride=stride,
+                padding=dilation,
+                dilation=dilation,
+                groups=hidden_dim,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                act_cfg=act_cfg,
+                **kwargs),
+            ConvModule(
+                in_channels=hidden_dim,
+                out_channels=out_channels,
+                kernel_size=1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                act_cfg=None,
+                **kwargs)
+        ])
+        self.conv = nn.Sequential(*layers)
+
+    def forward(self, x):
+
+        def _inner_forward(x):
+            if self.use_res_connect:
+                return x + self.conv(x)
+            else:
+                return self.conv(x)
+
+        if self.with_cp and x.requires_grad:
+            out = cp.checkpoint(_inner_forward, x)
+        else:
+            out = _inner_forward(x)
+
+        return out
+
+
+class InvertedResidualV3(nn.Module):
+    """Inverted Residual Block for MobileNetV3.
+
+    Args:
+        in_channels (int): The input channels of this Module.
+        out_channels (int): The output channels of this Module.
         mid_channels (int): The input channels of the depthwise convolution.
         kernel_size (int): The kernel size of the depthwise convolution.
-            Defaults to 3.
-        stride (int): The stride of the depthwise convolution. Defaults to 1.
-        se_cfg (dict, optional): Config dict for se layer. Defaults to None,
-            which means no se layer.
-        conv_cfg (dict): Config dict for convolution layer. Defaults to None,
+            Default: 3.
+        stride (int): The stride of the depthwise convolution. Default: 1.
+        se_cfg (dict): Config dict for se layer. Default: None, which means no
+            se layer.
+        with_expand_conv (bool): Use expand conv or not. If set False,
+            mid_channels must be the same with in_channels. Default: True.
+        conv_cfg (dict): Config dict for convolution layer. Default: None,
             which means using conv2d.
         norm_cfg (dict): Config dict for normalization layer.
-            Defaults to ``dict(type='BN')``.
+            Default: dict(type='BN').
         act_cfg (dict): Config dict for activation layer.
-            Defaults to ``dict(type='ReLU')``.
-        drop_path_rate (float): stochastic depth rate. Defaults to 0.
+            Default: dict(type='ReLU').
         with_cp (bool): Use checkpoint or not. Using checkpoint will save some
-            memory while slowing down the training speed. Defaults to False.
-        init_cfg (dict | list[dict], optional): Initialization config dict.
+            memory while slowing down the training speed. Default: False.
+
+    Returns:
+        Tensor: The output tensor.
     """
 
     def __init__(self,
@@ -50,23 +146,22 @@ class InvertedResidual(BaseModule):
                  kernel_size=3,
                  stride=1,
                  se_cfg=None,
+                 with_expand_conv=True,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN'),
                  act_cfg=dict(type='ReLU'),
-                 drop_path_rate=0.,
-                 with_cp=False,
-                 init_cfg=None):
-        super(InvertedResidual, self).__init__(init_cfg)
+                 with_cp=False):
+        super(InvertedResidualV3, self).__init__()
         self.with_res_shortcut = (stride == 1 and in_channels == out_channels)
         assert stride in [1, 2]
         self.with_cp = with_cp
-        self.drop_path = DropPath(
-            drop_path_rate) if drop_path_rate > 0 else nn.Identity()
         self.with_se = se_cfg is not None
-        self.with_expand_conv = (mid_channels != in_channels)
+        self.with_expand_conv = with_expand_conv
 
         if self.with_se:
             assert isinstance(se_cfg, dict)
+        if not self.with_expand_conv:
+            assert mid_channels == in_channels
 
         if self.with_expand_conv:
             self.expand_conv = ConvModule(
@@ -85,11 +180,14 @@ class InvertedResidual(BaseModule):
             stride=stride,
             padding=kernel_size // 2,
             groups=mid_channels,
-            conv_cfg=conv_cfg,
+            conv_cfg=dict(
+                type='Conv2dAdaptivePadding') if stride == 2 else conv_cfg,
             norm_cfg=norm_cfg,
             act_cfg=act_cfg)
+
         if self.with_se:
             self.se = SELayer(**se_cfg)
+
         self.linear_conv = ConvModule(
             in_channels=mid_channels,
             out_channels=out_channels,
@@ -101,14 +199,6 @@ class InvertedResidual(BaseModule):
             act_cfg=None)
 
     def forward(self, x):
-        """Forward function.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output tensor.
-        """
 
         def _inner_forward(x):
             out = x
@@ -124,7 +214,7 @@ class InvertedResidual(BaseModule):
             out = self.linear_conv(out)
 
             if self.with_res_shortcut:
-                return x + self.drop_path(out)
+                return x + out
             else:
                 return out
 

@@ -2,6 +2,7 @@
 import warnings
 
 import torch.nn as nn
+from torch.nn.modules.batchnorm import _BatchNorm
 
 import sys
 import os
@@ -13,15 +14,14 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
+
 from models.common import ConvModule, BaseModule
-
-from torch.nn.modules.batchnorm import _BatchNorm
-
-from ..builder import BACKBONES
-from ..utils import InvertedResidual, make_divisible
+from models.utils import InvertedResidual
+from utils import make_divisible
+from core.registry import BACKBONE
 
 
-@BACKBONES.register_module()
+@BACKBONE.register()
 class MobileNetV2(BaseModule):
     """MobileNetV2 backbone.
 
@@ -144,6 +144,7 @@ class MobileNetV2(BaseModule):
             layer_name = f'layer{i + 1}'
             self.add_module(layer_name, inverted_res_layer)
             self.layers.append(layer_name)
+        self.init_weights()
 
     def make_layer(self, out_channels, num_blocks, stride, dilation,
                    expand_ratio):

@@ -1,51 +1,76 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
+import sys
+import os
+from pathlib import Path
 
-def BN(*args, **kwargs):
-    return nn.BatchNorm2d
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
 
-
-def BN1d(*args, **kwargs):
-    return nn.BatchNorm1d
-
-
-def BN2d(*args, **kwargs):
-    return nn.BatchNorm2d
-
-
-def BN3d(*args, **kwargs):
-    return nn.BatchNorm3d
+from core.registry import NORMALIZATION
 
 
-def SyncBN(*args, **kwargs):
-    return nn.SyncBatchNorm
+@NORMALIZATION.register()
+def BatchNorm1d(*args, **kwargs):
+    return nn.BatchNorm1d(*args, **kwargs)
 
 
-def GN(*args, **kwargs):
-    return nn.GroupNorm
+@NORMALIZATION.register()
+def BatchNorm2d(*args, **kwargs):
+    return nn.BatchNorm2d(*args, **kwargs)
 
 
-def LN(*args, **kwargs):
-    return nn.LayerNorm
+@NORMALIZATION.register()
+def BatchNorm(*args, **kwargs):
+    return nn.BatchNorm2d(*args, **kwargs)
 
 
-def IN(*args, **kwargs):
-    return nn.InstanceNorm2d
+@NORMALIZATION.register()
+def BatchNorm3d(*args, **kwargs):
+    return nn.BatchNorm3d(*args, **kwargs)
 
 
-def IN1d(*args, **kwargs):
-    return nn.InstanceNorm1d
+@NORMALIZATION.register()
+def SyncBatchNorm(*args, **kwargs):
+    return nn.SyncBatchNorm(*args, **kwargs)
 
 
-def IN2d(*args, **kwargs):
-    return nn.InstanceNorm2d
+@NORMALIZATION.register()
+def GroupNorm(*args, **kwargs):
+    return nn.GroupNorm(*args, **kwargs)
 
 
-def IN3d(*args, **kwargs):
-    return nn.InstanceNorm3d
+@NORMALIZATION.register()
+def LayerNorm(*args, **kwargs):
+    return nn.LayerNorm(*args, **kwargs)
 
 
+@NORMALIZATION.register()
+def InstanceNorm2d(*args, **kwargs):
+    return nn.InstanceNorm2d(*args, **kwargs)
+
+
+@NORMALIZATION.register()
+def InstanceNorm(*args, **kwargs):
+    return nn.InstanceNorm2d(*args, **kwargs)
+
+
+@NORMALIZATION.register()
+def InstanceNorm1d(*args, **kwargs):
+    return nn.InstanceNorm1d(*args, **kwargs)
+
+
+@NORMALIZATION.register()
+def InstanceNorm3d(*args, **kwargs):
+    return nn.InstanceNorm3d(*args, **kwargs)
+
+
+@NORMALIZATION.register()
 class LayerNorm2d(nn.LayerNorm):
     """LayerNorm on channels for 2d images.
 
@@ -76,7 +101,3 @@ class LayerNorm2d(nn.LayerNorm):
             # problem in the downstream tasks
             x = x.permute(0, 3, 1, 2).contiguous()
         return x
-
-
-def LN2d(*args, **kwargs):
-    return LayerNorm2d
