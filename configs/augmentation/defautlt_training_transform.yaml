@@ -1,0 +1,120 @@
+__version__: 2.0.6
+transform:
+  __class_fullname__: Compose
+  additional_targets: {}
+  bbox_params: null
+  is_check_shapes: true
+  keypoint_params: null
+  p: 1.0
+  transforms:
+  - __class_fullname__: Resize
+    height: 640
+    interpolation: 1
+    mask_interpolation: 0
+    p: 1.0
+    width: 640
+  - __class_fullname__: OneOf
+    p: 1
+    transforms:
+    - __class_fullname__: Rotate
+      border_mode: 0
+      crop_border: false
+      fill: 0.0
+      fill_mask: 0.0
+      interpolation: 1
+      limit:
+      - -90.0
+      - 90.0
+      mask_interpolation: 0
+      p: 0.5
+      rotate_method: largest_box
+    - __class_fullname__: HorizontalFlip
+      p: 0.5
+    - __class_fullname__: VerticalFlip
+      p: 0.5
+  - __class_fullname__: OneOf
+    p: 1
+    transforms:
+    - __class_fullname__: MotionBlur
+      allow_shifted: true
+      angle_range:
+      - 0.0
+      - 360.0
+      blur_limit:
+      - 3
+      - 13
+      direction_range:
+      - -1.0
+      - 1.0
+      p: 0.5
+    - __class_fullname__: GlassBlur
+      iterations: 2
+      max_delta: 4
+      mode: fast
+      p: 0.5
+      sigma: 2.5
+    - __class_fullname__: Blur
+      blur_limit:
+      - 3
+      - 7
+      p: 0.5
+    - __class_fullname__: Defocus
+      alias_blur:
+      - 0.1
+      - 0.5
+      p: 0.5
+      radius:
+      - 3
+      - 10
+  - __class_fullname__: OneOf
+    p: 1
+    transforms:
+    - __class_fullname__: RandomBrightnessContrast
+      brightness_by_max: true
+      brightness_limit:
+      - -0.2
+      - 0.2
+      contrast_limit:
+      - -0.2
+      - 0.2
+      ensure_safe_range: false
+      p: 0.5
+    - __class_fullname__: RandomGamma
+      gamma_limit:
+      - 60.0
+      - 140.0
+      p: 0.5
+    - __class_fullname__: HueSaturationValue
+      hue_shift_limit:
+      - -5.0
+      - 5.0
+      p: 0.5
+      sat_shift_limit:
+      - -10.0
+      - 10.0
+      val_shift_limit:
+      - -10.0
+      - 10.0
+  - __class_fullname__: ISONoise
+    color_shift:
+    - 0.05
+    - 0.2
+    intensity:
+    - 0.1
+    - 0.5
+    p: 0.1
+  - __class_fullname__: Normalize
+    max_pixel_value: 255.0
+    mean:
+    - 0.485
+    - 0.456
+    - 0.406
+    normalization: standard
+    p: 1.0
+    std:
+    - 0.229
+    - 0.224
+    - 0.225
+  - __class_fullname__: ToTensorV2
+    p: 1.0
+    transpose_mask: false
