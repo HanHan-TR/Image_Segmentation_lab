@@ -95,8 +95,7 @@ class HRModule(BaseModule):
                     kernel_size=1,
                     stride=stride,
                     bias=False),
-                build_norm_layer(self.norm_cfg, num_channels[branch_index] *
-                                 block.expansion)[1])
+                build_norm_layer(self.norm_cfg, num_channels[branch_index] * block.expansion)[1])
 
         layers = []
         layers.append(

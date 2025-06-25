@@ -280,7 +280,7 @@ class CrossEntropyLoss(nn.Module):
         # Note: for BCE loss, label < 0 is invalid.
         loss_cls = self.loss_weight * self.cls_criterion(
             cls_score,
-            label,
+            label.long(),
             weight,
             class_weight=class_weight,
             reduction=reduction,

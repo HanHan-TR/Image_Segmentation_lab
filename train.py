@@ -110,7 +110,7 @@ def main():
     # Step 5 读取数据集 并设置数据加载器
     train_dataset = build_from_cfg(cfg=dataset_cfg['train'], registry=DATASET)
     train_dataloader = DataLoader(dataset=train_dataset,
-                                  batch_size=16,
+                                  batch_size=2,
                                   shuffle=False,
                                   num_workers=0,
                                   pin_memory=False,

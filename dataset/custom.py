@@ -1,24 +1,30 @@
-# Copyright (c) OpenMMLab. All rights reserved.
 import os.path as osp
+from abc import ABCMeta, abstractmethod
 import warnings
 from collections import OrderedDict
 
-import mmcv
+import cv2
 import numpy as np
-from mmcv.utils import print_log
-from prettytable import PrettyTable
+import albumentations as A
 from torch.utils.data import Dataset
 
-from mmseg.core import eval_metrics, intersect_and_union, pre_eval_to_metrics
-from mmseg.utils import get_root_logger
-from .builder import DATASETS
-from .pipelines import Compose, LoadAnnotations
+import sys
+import os
+from pathlib import Path
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[1]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from core.fileio import HardDiskBackend, list_from_file
 
 
-@DATASETS.register_module()
 class CustomDataset(Dataset):
     """Custom dataset for semantic segmentation. An example of file structure
-    is as followed.
+    is as followed.语义分割自定义数据集。文件结构示例如下：
 
     .. code-block:: none
 
@@ -37,44 +43,30 @@ class CustomDataset(Dataset):
         │   │   │   │   ├── zzz{seg_map_suffix}
         │   │   │   ├── val
 
-    The img/gt_semantic_seg pair of CustomDataset should be of the same
-    except suffix. A valid img/gt_semantic_seg filename pair should be like
-    ``xxx{img_suffix}`` and ``xxx{seg_map_suffix}`` (extension is also included
-    in the suffix). If split is given, then ``xxx`` is specified in txt file.
-    Otherwise, all files in ``img_dir/``and ``ann_dir`` will be loaded.
-    Please refer to ``docs/en/tutorials/new_dataset.md`` for more details.
+    CustomDataset的图像/语义标注图文件对应当保持相同前缀（仅后缀不同）。有效的文件名对应关系应为
+    ``xxx{图片后缀}`` 和 ``xxx{标注图后缀}``（扩展名包含在后缀中）。若提供split参数，
+    则 ``xxx`` 由txt文件指定；否则将加载 ``img_dir/`` 和 ``ann_dir`` 下的所有文件。
 
 
     Args:
-        pipeline (list[dict]): Processing pipeline
-        img_dir (str): Path to image directory
-        img_suffix (str): Suffix of images. Default: '.jpg'
-        ann_dir (str, optional): Path to annotation directory. Default: None
-        seg_map_suffix (str): Suffix of segmentation maps. Default: '.png'
-        split (str, optional): Split txt file. If split is specified, only
-            file with suffix in the splits will be loaded. Otherwise, all
-            images in img_dir/ann_dir will be loaded. Default: None
-        data_root (str, optional): Data root for img_dir/ann_dir. Default:
-            None.
-        test_mode (bool): If test_mode=True, gt wouldn't be loaded.
-        ignore_index (int): The label index to be ignored. Default: 255
-        reduce_zero_label (bool): Whether to mark label zero as ignored.
-            Default: False
-        classes (str | Sequence[str], optional): Specify classes to load.
-            If is None, ``cls.CLASSES`` will be used. Default: None.
+        pipeline (str): albumentations 数据增强yaml配置文件路径
+        img_dir (str): 图像目录路径
+        img_suffix (str): 图像文件后缀。默认：'.jpg'
+        ann_dir (str, 可选): 标注文件目录路径。默认：None
+        seg_map_suffix (str): 语义分割图后缀。默认：'.png'
+        split (str, 可选): 数据集划分文件。若指定，则仅加载split文件中列出的文件；
+            否则加载img_dir/ann_dir下所有文件。默认：None
+        data_root (str, 可选): img_dir/ann_dir的根目录。默认：None
+        test_mode (bool): 测试模式开关。若为True则不加载标注。默认：False
+        ignore_index (int): 需忽略的标签索引值。默认：255
+        reduce_zero_label (bool): 是否将0号标签标记为忽略。默认：False
+        classes (str | Sequence[str], 可选): 指定加载的类别名称。若为None则使用``cls.CLASSES``。默认：None
         palette (Sequence[Sequence[int]]] | np.ndarray | None):
-            The palette of segmentation map. If None is given, and
-            self.PALETTE is None, random palette will be generated.
-            Default: None
-        gt_seg_map_loader_cfg (dict, optional): build LoadAnnotations to
-            load gt for evaluation, load from disk by default. Default: None.
-        file_client_args (dict): Arguments to instantiate a FileClient.
-            See :class:`mmcv.fileio.FileClient` for details.
-            Defaults to ``dict(backend='disk')``.
+            分割图的调色板。若为None且self.PALETTE为None，则生成随机调色板。默认：None
+        file_client (class): 文件客户端
     """
 
     CLASSES = None
-
     PALETTE = None
 
     def __init__(self,
@@ -90,9 +82,10 @@ class CustomDataset(Dataset):
                  reduce_zero_label=False,
                  classes=None,
                  palette=None,
-                 gt_seg_map_loader_cfg=None,
-                 file_client_args=dict(backend='disk')):
-        self.pipeline = Compose(pipeline)
+                 ori_img_size=None,  # (720, 1280)
+                 return_ori_seg_gt=False,
+                 file_client=HardDiskBackend):
+        self.pipeline = A.load(filepath_or_buffer=pipeline, data_format='yaml')
         self.img_dir = img_dir
         self.img_suffix = img_suffix
         self.ann_dir = ann_dir
@@ -103,15 +96,16 @@ class CustomDataset(Dataset):
         self.ignore_index = ignore_index
         self.reduce_zero_label = reduce_zero_label
         self.label_map = None
-        self.CLASSES, self.PALETTE = self.get_classes_and_palette(
-            classes, palette)
-        self.gt_seg_map_loader = LoadAnnotations(
-        ) if gt_seg_map_loader_cfg is None else LoadAnnotations(
-            **gt_seg_map_loader_cfg)
+        self.CLASSES, self.PALETTE = self.get_classes_and_palette(classes, palette)
 
-        self.file_client_args = file_client_args
-        self.file_client = mmcv.FileClient.infer_client(self.file_client_args)
+        self.ori_img_size = ori_img_size
+        if self.ori_img_size:
+            assert isinstance(ori_img_size, tuple) and len(ori_img_size) == 2
+            for value in ori_img_size:
+                assert isinstance(value, int)
 
+        self.file_client = file_client
+        self.return_ori_seg_gt = return_ori_seg_gt  # 是否在data_infos中返回原始标签变量
         if test_mode:
             assert self.CLASSES is not None, \
                 '`cls.CLASSES` or `classes` should be specified when testing'
@@ -153,29 +147,27 @@ class CustomDataset(Dataset):
 
         img_infos = []
         if split is not None:
-            lines = mmcv.list_from_file(
-                split, file_client_args=self.file_client_args)
+            lines = list_from_file(split)
             for line in lines:
                 img_name = line.strip()
                 img_info = dict(filename=img_name + img_suffix)
                 if ann_dir is not None:
                     seg_map = img_name + seg_map_suffix
-                    img_info['ann'] = dict(seg_map=seg_map)
+                    img_info.update(dict(ann_filename=seg_map))
                 img_infos.append(img_info)
         else:
-            for img in self.file_client.list_dir_or_file(
-                    dir_path=img_dir,
-                    list_dir=False,
-                    suffix=img_suffix,
-                    recursive=True):
+            for img in self.file_client.list_dir_or_file(dir_path=img_dir,
+                                                         list_dir=False,
+                                                         suffix=img_suffix,
+                                                         recursive=True):
                 img_info = dict(filename=img)
                 if ann_dir is not None:
                     seg_map = img.replace(img_suffix, seg_map_suffix)
-                    img_info['ann'] = dict(seg_map=seg_map)
+                    img_info.update(dict(ann_filename=seg_map))
                 img_infos.append(img_info)
             img_infos = sorted(img_infos, key=lambda x: x['filename'])
 
-        print_log(f'Loaded {len(img_infos)} images', logger=get_root_logger())
+        print(f'Loaded {len(img_infos)} images')
         return img_infos
 
     def get_ann_info(self, idx):
@@ -190,13 +182,20 @@ class CustomDataset(Dataset):
 
         return self.img_infos[idx]['ann']
 
-    def pre_pipeline(self, results):
-        """Prepare results dict for pipeline."""
-        results['seg_fields'] = []
-        results['img_prefix'] = self.img_dir
-        results['seg_prefix'] = self.ann_dir
-        if self.custom_classes:
-            results['label_map'] = self.label_map
+    def prepare_data_info(self, idx):
+        img_info = self.img_infos[idx]
+        data_infos = dict(img_file_path=osp.join(self.img_dir,
+                                                 img_info['filename']),
+                          ann_file_path=osp.join(self.ann_dir,
+                                                 img_info['ann_filename']))
+        if self.ori_img_size:
+            data_infos.update(dict(ori_img_size_hw=self.ori_img_size))
+        else:
+            size = cv2.imread(data_infos['img_file_path']).shape[:2]
+            data_infos.update(dict(ori_img_size_hw=size))
+
+        data_infos.update(dict(return_ori_seg_gt=self.return_ori_seg_gt))
+        return data_infos
 
     def __getitem__(self, idx):
         """Get training/test data after pipeline.
@@ -208,44 +207,22 @@ class CustomDataset(Dataset):
             dict: Training/test data (with annotation if `test_mode` is set
                 False).
         """
+        infos = self.prepare_data_info(idx)
 
         if self.test_mode:
-            return self.prepare_test_img(idx)
+            return self.prepare_test__data(infos)
         else:
-            return self.prepare_train_img(idx)
+            return self.prepare_train_val_data(infos)
 
-    def prepare_train_img(self, idx):
-        """Get training data and annotations after pipeline.
+    @abstractmethod
+    def prepare_train_val_data(self, infos):
+        """Placeholder for Forward function for training."""
+        pass
 
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Training data and annotation after pipeline with new keys
-                introduced by pipeline.
-        """
-
-        img_info = self.img_infos[idx]
-        ann_info = self.get_ann_info(idx)
-        results = dict(img_info=img_info, ann_info=ann_info)
-        self.pre_pipeline(results)
-        return self.pipeline(results)
-
-    def prepare_test_img(self, idx):
-        """Get testing data after pipeline.
-
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Testing data after pipeline with new keys introduced by
-                pipeline.
-        """
-
-        img_info = self.img_infos[idx]
-        results = dict(img_info=img_info)
-        self.pre_pipeline(results)
-        return self.pipeline(results)
+    @abstractmethod
+    def prepare_test_data(self, infos):
+        """Placeholder for Forward function for training."""
+        pass
 
     def format_results(self, results, imgfile_prefix, indices=None, **kwargs):
         """Place holder to format result to dataset specific output."""
@@ -274,45 +251,6 @@ class CustomDataset(Dataset):
             self.gt_seg_map_loader(results)
             yield results['gt_semantic_seg']
 
-    def pre_eval(self, preds, indices):
-        """Collect eval result from each iteration.
-
-        Args:
-            preds (list[torch.Tensor] | torch.Tensor): the segmentation logit
-                after argmax, shape (N, H, W).
-            indices (list[int] | int): the prediction related ground truth
-                indices.
-
-        Returns:
-            list[torch.Tensor]: (area_intersect, area_union, area_prediction,
-                area_ground_truth).
-        """
-        # In order to compat with batch inference
-        if not isinstance(indices, list):
-            indices = [indices]
-        if not isinstance(preds, list):
-            preds = [preds]
-
-        pre_eval_results = []
-
-        for pred, index in zip(preds, indices):
-            seg_map = self.get_gt_seg_map_by_idx(index)
-            pre_eval_results.append(
-                intersect_and_union(
-                    pred,
-                    seg_map,
-                    len(self.CLASSES),
-                    self.ignore_index,
-                    # as the labels has been converted when dataset initialized
-                    # in `get_palette_for_custom_classes ` this `label_map`
-                    # should be `dict()`, see
-                    # https://github.com/open-mmlab/mmsegmentation/issues/1415
-                    # for more ditails
-                    label_map=dict(),
-                    reduce_zero_label=self.reduce_zero_label))
-
-        return pre_eval_results
-
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
 
@@ -333,7 +271,7 @@ class CustomDataset(Dataset):
         self.custom_classes = True
         if isinstance(classes, str):
             # take it as a file path
-            class_names = mmcv.list_from_file(classes)
+            class_names = list_from_file(classes)
         elif isinstance(classes, (tuple, list)):
             class_names = classes
         else:
@@ -384,104 +322,3 @@ class CustomDataset(Dataset):
                 palette = self.PALETTE
 
         return palette
-
-    def evaluate(self,
-                 results,
-                 metric='mIoU',
-                 logger=None,
-                 gt_seg_maps=None,
-                 **kwargs):
-        """Evaluate the dataset.
-
-        Args:
-            results (list[tuple[torch.Tensor]] | list[str]): per image pre_eval
-                 results or predict segmentation map for computing evaluation
-                 metric.
-            metric (str | list[str]): Metrics to be evaluated. 'mIoU',
-                'mDice' and 'mFscore' are supported.
-            logger (logging.Logger | None | str): Logger used for printing
-                related information during evaluation. Default: None.
-            gt_seg_maps (generator[ndarray]): Custom gt seg maps as input,
-                used in ConcatDataset
-
-        Returns:
-            dict[str, float]: Default metrics.
-        """
-        if isinstance(metric, str):
-            metric = [metric]
-        allowed_metrics = ['mIoU', 'mDice', 'mFscore']
-        if not set(metric).issubset(set(allowed_metrics)):
-            raise KeyError('metric {} is not supported'.format(metric))
-
-        eval_results = {}
-        # test a list of files
-        if mmcv.is_list_of(results, np.ndarray) or mmcv.is_list_of(
-                results, str):
-            if gt_seg_maps is None:
-                gt_seg_maps = self.get_gt_seg_maps()
-            num_classes = len(self.CLASSES)
-            ret_metrics = eval_metrics(
-                results,
-                gt_seg_maps,
-                num_classes,
-                self.ignore_index,
-                metric,
-                label_map=dict(),
-                reduce_zero_label=self.reduce_zero_label)
-        # test a list of pre_eval_results
-        else:
-            ret_metrics = pre_eval_to_metrics(results, metric)
-
-        # Because dataset.CLASSES is required for per-eval.
-        if self.CLASSES is None:
-            class_names = tuple(range(num_classes))
-        else:
-            class_names = self.CLASSES
-
-        # summary table
-        ret_metrics_summary = OrderedDict({
-            ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
-            for ret_metric, ret_metric_value in ret_metrics.items()
-        })
-
-        # each class table
-        ret_metrics.pop('aAcc', None)
-        ret_metrics_class = OrderedDict({
-            ret_metric: np.round(ret_metric_value * 100, 2)
-            for ret_metric, ret_metric_value in ret_metrics.items()
-        })
-        ret_metrics_class.update({'Class': class_names})
-        ret_metrics_class.move_to_end('Class', last=False)
-
-        # for logger
-        class_table_data = PrettyTable()
-        for key, val in ret_metrics_class.items():
-            class_table_data.add_column(key, val)
-
-        summary_table_data = PrettyTable()
-        for key, val in ret_metrics_summary.items():
-            if key == 'aAcc':
-                summary_table_data.add_column(key, [val])
-            else:
-                summary_table_data.add_column('m' + key, [val])
-
-        print_log('per class results:', logger)
-        print_log('\n' + class_table_data.get_string(), logger=logger)
-        print_log('Summary:', logger)
-        print_log('\n' + summary_table_data.get_string(), logger=logger)
-
-        # each metric dict
-        for key, value in ret_metrics_summary.items():
-            if key == 'aAcc':
-                eval_results[key] = value / 100.0
-            else:
-                eval_results['m' + key] = value / 100.0
-
-        ret_metrics_class.pop('Class', None)
-        for key, value in ret_metrics_class.items():
-            eval_results.update({
-                key + '.' + str(name): value[idx] / 100.0
-                for idx, name in enumerate(class_names)
-            })
-
-        return eval_results
