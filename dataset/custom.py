@@ -188,9 +188,7 @@ class CustomDataset(Dataset):
                                                  img_info['filename']),
                           ann_file_path=osp.join(self.ann_dir,
                                                  img_info['ann_filename']))
-        if self.ori_img_size:
-            data_infos.update(dict(ori_img_size_hw=self.ori_img_size))
-        else:
+        if not self.ori_img_size:
             size = cv2.imread(data_infos['img_file_path']).shape[:2]
             data_infos.update(dict(ori_img_size_hw=size))
 

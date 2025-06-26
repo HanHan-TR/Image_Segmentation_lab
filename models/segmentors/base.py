@@ -105,7 +105,7 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         else:
             return self.aug_test(imgs, img_metas, **kwargs)
 
-    def forward(self, img, img_metas, return_loss=True, **kwargs):
+    def forward(self, img, gt, img_metas, rescale=False, return_loss=True, **kwargs):
         """Calls either :func:`forward_train` or :func:`forward_test` depending
         on whether ``return_loss`` is ``True``.
 
@@ -116,9 +116,9 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         the outer list indicating test time augmentations.
         """
         if return_loss:
-            return self.forward_train(img, img_metas, **kwargs)
+            return self.forward_train(img, gt, meta_infos=img_metas, rescale=rescale, **kwargs)
         else:
-            return self.forward_test(img, img_metas, **kwargs)
+            return self.forward_test(img, img_metas, rescale=rescale, **kwargs)
 
     def train_step(self, data_batch, optimizer, **kwargs):
         """The iteration step during training.
@@ -177,53 +177,6 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
             num_samples=len(data_batch['img_metas']))
 
         return outputs
-
-    @staticmethod
-    def _parse_losses(losses):
-        """Parse the raw outputs (losses) of the network.
-
-        Args:
-            losses (dict): Raw output of the network, which usually contain
-                losses and other necessary information.
-
-        Returns:
-            tuple[Tensor, dict]: (loss, log_vars), loss is the loss tensor
-                which may be a weighted sum of all losses, log_vars contains
-                all the variables to be sent to the logger.
-        """
-        log_vars = OrderedDict()
-        for loss_name, loss_value in losses.items():
-            if isinstance(loss_value, torch.Tensor):
-                log_vars[loss_name] = loss_value.mean()
-            elif isinstance(loss_value, list):
-                log_vars[loss_name] = sum(_loss.mean() for _loss in loss_value)
-            else:
-                raise TypeError(
-                    f'{loss_name} is not a tensor or list of tensors')
-
-        loss = sum(_value for _key, _value in log_vars.items()
-                   if 'loss' in _key)
-
-        # If the loss_vars has different length, raise assertion error
-        # to prevent GPUs from infinite waiting.
-        if dist.is_available() and dist.is_initialized():
-            log_var_length = torch.tensor(len(log_vars), device=loss.device)
-            dist.all_reduce(log_var_length)
-            message = (f'rank {dist.get_rank()}'
-                       + f' len(log_vars): {len(log_vars)}' + ' keys: '
-                       + ','.join(log_vars.keys()) + '\n')
-            assert log_var_length == len(log_vars) * dist.get_world_size(), \
-                'loss log variables are different across GPUs!\n' + message
-
-        log_vars['loss'] = loss
-        for loss_name, loss_value in log_vars.items():
-            # reduce loss when distributed training
-            if dist.is_available() and dist.is_initialized():
-                loss_value = loss_value.data.clone()
-                dist.all_reduce(loss_value.div_(dist.get_world_size()))
-            log_vars[loss_name] = loss_value.item()
-
-        return loss, log_vars
 
     def show_result(self,
                     img,

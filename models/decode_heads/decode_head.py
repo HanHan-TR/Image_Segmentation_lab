@@ -2,6 +2,7 @@
 import warnings
 from abc import ABCMeta, abstractmethod
 
+from numpy import single
 import torch
 import torch.nn as nn
 
@@ -141,14 +142,6 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             self.dropout = nn.Dropout2d(dropout_ratio)
         else:
             self.dropout = None
-        self.fp16_enabled = False
-
-    def extra_repr(self):
-        """Extra repr."""
-        s = f'input_transform={self.input_transform}, ' \
-            f'ignore_index={self.ignore_index}, ' \
-            f'align_corners={self.align_corners}'
-        return s
 
     def _init_inputs(self, in_channels, in_index, input_transform):
         """Check and initialize input transforms.
@@ -220,7 +213,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """Placeholder of forward function."""
         pass
 
-    def forward_train(self, inputs, img_metas, gt_semantic_seg, train_cfg):
+    def forward_train(self, inputs, gt_semantic_seg, meta_infos, rescale=False):
         """Forward function for training.
         Args:
             inputs (list[Tensor]): List of multi-level img features.
@@ -237,10 +230,10 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
             dict[str, Tensor]: a dictionary of loss components
         """
         seg_logits = self(inputs)
-        losses = self.losses(seg_logits, gt_semantic_seg)
-        return losses
+        seg_logits, losses = self.losses(seg_logits, gt_semantic_seg, meta_infos, rescale=rescale)
+        return seg_logits, losses
 
-    def forward_test(self, inputs, img_metas, test_cfg):
+    def forward_test(self, inputs, meta_infos, rescale=True):
         """Forward function for testing.
 
         Args:
@@ -255,7 +248,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         Returns:
             Tensor: Output segmentation map.
         """
-        return self.forward(inputs)
+        return self.forward(inputs, meta_infos, rescale=True)
 
     def cls_seg(self, feat):
         """Classify each pixel."""
@@ -264,36 +257,64 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         output = self.conv_seg(feat)
         return output
 
-    def losses(self, seg_logit, seg_label):
+    def losses(self, seg_logit, seg_label, meta_infos, rescale=False):
         """Compute segmentation loss."""
         loss = dict()
+
+        # 将预测图resize到预测网络的输入特征大小
         seg_logit = resize(input=seg_logit,
                            size=seg_label.shape[2:],
                            mode='bilinear',
                            align_corners=self.align_corners)
+
+        # 进行难例挖掘
         if self.sampler is not None:
             seg_weight = self.sampler.sample(seg_logit, seg_label)
         else:
             seg_weight = None
         seg_label = seg_label.squeeze(1)
 
+        # 计算损失
         if not isinstance(self.loss_decode, nn.ModuleList):
             losses_decode = [self.loss_decode]
         else:
             losses_decode = self.loss_decode
         for loss_decode in losses_decode:
             if loss_decode.loss_name not in loss:
-                loss[loss_decode.loss_name] = loss_decode(
-                    seg_logit,
-                    seg_label,
-                    weight=seg_weight,
-                    ignore_index=self.ignore_index)
+                loss[loss_decode.loss_name] = loss_decode(seg_logit,
+                                                          seg_label,
+                                                          weight=seg_weight,
+                                                          ignore_index=self.ignore_index)
             else:
-                loss[loss_decode.loss_name] += loss_decode(
-                    seg_logit,
-                    seg_label,
-                    weight=seg_weight,
-                    ignore_index=self.ignore_index)
+                loss[loss_decode.loss_name] += loss_decode(seg_logit,
+                                                           seg_label,
+                                                           weight=seg_weight,
+                                                           ignore_index=self.ignore_index)
 
         loss['acc_seg'] = accuracy(seg_logit, seg_label, ignore_index=self.ignore_index)
-        return loss
+
+        # 将预测图resize到原始图像大小
+        assert isinstance(meta_infos, dict), 'the meta_infos in the losses function of the decode head must be a dict !'
+        ori_img_size = meta_infos.get('ori_img_size_hw', None)  # tuple or list of tuple
+
+        if rescale and ori_img_size:
+            if isinstance(ori_img_size, tuple):
+                # 所有的输入图像的尺寸都一样，用一个tuple表示：(height,width)
+                rescaled_seg_logit = resize(input=seg_logit,
+                                            size=ori_img_size,
+                                            mode='bilinear',
+                                            align_corners=self.align_corners)  # tensor
+            elif isinstance(ori_img_size, list):
+                # 输入图像的尺寸各不相同，用list of tuple表示 [(height_1,width_1),...,(height_n,width_n)]
+                assert len(seg_logit) == len(ori_img_size)
+                rescaled_seg_logit = []
+                for i, ori_size in enumerate(ori_img_size):
+                    single_logit = seg_logit[i]  # (channel, h, w)
+                    rescaled_single_logit = resize(input=single_logit,
+                                                   size=ori_size,
+                                                   mode='bilinear',
+                                                   align_corners=self.align_corners)
+                    rescaled_seg_logit.append(rescaled_single_logit)  # list of tensor
+        else:
+            rescaled_seg_logit = seg_logit
+        return rescaled_seg_logit, loss
