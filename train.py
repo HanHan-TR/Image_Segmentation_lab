@@ -106,15 +106,15 @@ def main():
     # Step 5 读取数据集 并设置数据加载器
     train_dataset = build_from_cfg(cfg=dataset_cfg['train'], registry=DATASET)
     train_dataloader = DataLoader(dataset=train_dataset,
-                                  batch_size=2,
+                                  batch_size=16,
                                   shuffle=False,
-                                  num_workers=0,
+                                  num_workers=4,
                                   pin_memory=False,
                                   collate_fn=train_dataset.collate_fn)
 
     val_dataset = build_from_cfg(cfg=dataset_cfg['val'], registry=DATASET)
     val_dataloader = DataLoader(dataset=val_dataset,
-                                batch_size=8,
+                                batch_size=16,
                                 shuffle=False,
                                 num_workers=0,
                                 pin_memory=False,
@@ -123,14 +123,19 @@ def main():
 
     for epoch in range(args.epochs):
         optimizer.zero_grad()
-        train_log_vars = train_one_epoch(epoch, model, train_dataloader, optimizer, scaler, args)
+        model, train_log_vars = train_one_epoch(epoch, model, train_dataloader, optimizer, scaler, args)
         # # 更新学习率
         lr_scheduler.step()
         # # 保存模型
 
         # todo：
         # 1. 模型验证相关代码：验证的推理过程，模型评价指标计算；
-        evaluator = SegEvaluator(num_classes=2, ignore_index=-1)
+        evaluator = SegEvaluator(epoch,
+                                 num_classes=2,
+                                 class_names=val_dataset.CLASSES,
+                                 palette=val_dataset.PALETTE,
+                                 ignore_index=0,
+                                 output_dir=save_dir)
         # 2. 保存模型相关代码：保存模型权重，日志文件，配置文件等；
         # 3. 日志记录相关代码：记录训练过程中的相关信息，如loss，lr，时间等；
         # 4. 模型推理结果的可视化相关代码：可视化模型推理结果，如预测的mask，原始图像，预测结果等；

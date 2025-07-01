@@ -42,6 +42,7 @@ defautlt_training_transform = A.Compose([A.Resize(height=640, width=640),
                                          ])
 
 defautlt_val_transform = A.Compose([  # 归一化与转换成 Tensor 模式
+    A.Resize(height=640, width=640),
     A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),  # !! mean 与 std 的数值需要根据不同的数据集改变
     # Convert image and mask to PyTorch tensors
     A.ToTensorV2(),  # !! 请使用最新版的albumentations （2.0.6版本是OK的）
@@ -57,7 +58,7 @@ def parse_args():
                         default=ROOT / 'configs/augmentation',
                         help='dir to save augmentation setting file')
     parser.add_argument('--name', type=str,
-                        default='defautlt_training_transform',
+                        default='defautlt_val_transform',
                         help='name of augmentation setting file')
     args = parser.parse_args()
     return args
@@ -67,7 +68,8 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
 
-    transform = defautlt_training_transform
+    # transform = defautlt_training_transform
+    transform = defautlt_val_transform
 
     if args.file_type == 'json':
         pass

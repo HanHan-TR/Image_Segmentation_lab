@@ -1,9 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import os.path as osp
+import math
 from collections import OrderedDict, defaultdict
-from typing import Dict, List, Optional, Sequence
-from unittest import result
-
+from typing import Dict, List, Optional, Sequence, Union
+import cv2 as cv
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -51,30 +50,42 @@ class SegEvaluator():
     """
 
     def __init__(self,
+                 epoch: int,
+                 num_classes: int,
+                 class_names: List[str],
+                 palette: Sequence[Sequence[int]],
                  ignore_index: int = 255,
                  iou_metrics: List[str] = ['mIoU', 'mDice', 'mFscore'],
                  nan_to_num: Optional[int] = None,
                  beta: int = 1,  # beta=1，默认计算 F1-score
                  # collect_device: str = 'cpu',
+                 show_result: bool = True,
                  output_dir: Optional[str] = None,
                  format_only: bool = False,
                  prefix: Optional[str] = None,
                  **kwargs) -> None:
         super().__init__()
-
+        self.epoch = epoch
+        self.num_classes = num_classes
+        self.class_names = class_names
+        self.palette = palette
         self.ignore_index = ignore_index
         self.metrics = iou_metrics  # 选择计算的指标类型 （mIOU/mDice/mFscore）
         self.nan_to_num = nan_to_num
         self.beta = beta  # F-score计算中的精确率与召回率的权重比
+        self.show_result = show_result
         self.output_dir = output_dir  # 预测结果输出路径 （用于可视化）
         self.prefix = prefix
         if self.output_dir:
             mkdir_or_exist(self.output_dir)
         self.format_only = format_only
 
-        self.results = defaultdict(list)  # 用于缓存计算结果  area_intersect, area_union, area_pred_label, area_label
+        self.results = dict()  # 用于缓存计算结果  area_intersect, area_union, area_pred_label, area_label
 
-    def process(self, pred_batch: dict, labels_batch: Sequence[torch.tensor]) -> None:
+    def process(self,
+                batch_idx: int,
+                pred_batch: Union[torch.tensor, List[torch.tensor]],
+                batch_infos: dict) -> None:
         """Process one batch of data and data_samples.
 
         The processed results should be stored in ``self.results``, which will
@@ -84,42 +95,33 @@ class SegEvaluator():
             data_batch (dict): A batch of data from the dataloader.
             data_samples (Sequence[dict]): A batch of outputs from the model.
         """
-        num_classes = 2  # len(self.dataset_meta['classes'])  # 目标类别数
-        for key, value in pred_batch.items():
-            for i in range(len(value)):
-                pred_batch[key][i] = F.softmax(value[i], dim=0).argmax(dim=0)
-
-        # labels_batch = [label.squeeze(0) for label in labels_batch]
+        num_classes = self.num_classes
+        labels_batch = batch_infos['ori_gt']
 
         for key, value in pred_batch.items():
-            # if key not in results:
-            #     results[key] = []
+            for i in range(len(value)):  # list
+                if self.num_classes == 1:
+                    pred = F.sigmoid(value[i]).argmax(dim=1)
+                else:
+                    pred = F.softmax(value[i], dim=1).argmax(dim=1)
+                pred_batch[key][i] = pred.squeeze(0)  # tensor: (H, W)
 
-            self.results[key].append(self.intersect_and_union(pred_labels=value,
-                                                              labels_gt=labels_batch.copy(),
-                                                              num_classes=num_classes,
-                                                              ignore_index=self.ignore_index))
-        # for data_sample in data_samples:
-        #     pred_label = data_sample['pred_sem_seg']['data'].squeeze()
-        #     # format_only always for test dataset without ground truth
-        #     if not self.format_only:
-        #         label = data_sample['gt_sem_seg']['data'].squeeze().to(pred_label)
-        #         self.results.append(self.intersect_and_union(pred_label,
-        #                                                      label,
-        #                                                      num_classes,
-        #                                                      self.ignore_index))
-        #     # format_result
-        #     if self.output_dir is not None:
-        #         basename = osp.splitext(osp.basename(data_sample['img_path']))[0]
-        #         png_filename = osp.abspath(osp.join(self.output_dir, f'{basename}.png'))
-        #         output_mask = pred_label.cpu().numpy()
-        #         # The index range of official ADE20k dataset is from 0 to 150.
-        #         # But the index range of output is from 0 to 149.
-        #         # That is because we set reduce_zero_label=True.
-        #         if data_sample.get('reduce_zero_label', False):
-        #             output_mask = output_mask + 1
-        #         output = Image.fromarray(output_mask.astype(np.uint8))
-        #         output.save(png_filename)
+        if self.show_result and batch_idx < 4:
+            self.plot_results(batch_idx=batch_idx,
+                              pred_batch=pred_batch,
+                              batch_infos=batch_infos)
+
+        for key, value in pred_batch.items():
+            if key not in self.results:
+                self.results[key] = [[], [], [], []]
+            area_intersect, area_union, area_pred_label, area_label = self.intersect_and_union(pred_labels=value,
+                                                                                               labels_gt=labels_batch.copy(),
+                                                                                               num_classes=num_classes,
+                                                                                               ignore_index=self.ignore_index)
+            self.results[key][0].extend(area_intersect)
+            self.results[key][1].extend(area_union)
+            self.results[key][2].extend(area_pred_label)
+            self.results[key][3].extend(area_label)
 
     def compute_metrics(self):
         if isinstance(self.results, list):
@@ -148,13 +150,13 @@ class SegEvaluator():
         """
         # 根据中间结果计算最终指标（抽象方法，子类必须实现）
         # logger: MMLogger = MMLogger.get_current_instance()
-    #    results = self.results
-        if self.format_only:
-            # logger.info(f'results are saved to {osp.dirname(self.output_dir)}')
-            return OrderedDict()
-        # convert list of tuples to tuple of lists, e.g.
-        # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to ([A_1, ..., A_n], ..., [D_1, ..., D_n])
-        results = tuple(zip(*results))  # 解压所有batch的结果，将[(a,b,c,d),...]转为([a...],[b...],...)
+        # results = self.results
+        # if self.format_only:
+        #     # logger.info(f'results are saved to {osp.dirname(self.output_dir)}')
+        #     return OrderedDict()
+        # # convert list of tuples to tuple of lists, e.g.
+        # # [(A_1, B_1, C_1, D_1), ...,  (A_n, B_n, C_n, D_n)] to ([A_1, ..., A_n], ..., [D_1, ..., D_n])
+        # results = tuple(zip(*results))  # 解压所有batch的结果，将[(a,b,c,d),...]转为([a...],[b...],...)
         assert len(results) == 4
 
         # 累加所有batch的统计量
@@ -171,8 +173,6 @@ class SegEvaluator():
                                                  self.metrics,
                                                  self.nan_to_num,
                                                  self.beta)
-
-        class_names = self.dataset_meta['classes']
 
         # summary table
         ret_metrics_summary = OrderedDict({
@@ -192,16 +192,17 @@ class SegEvaluator():
             ret_metric: np.round(ret_metric_value * 100, 2)
             for ret_metric, ret_metric_value in ret_metrics.items()
         })
-        ret_metrics_class.update({'Class': class_names})
+        ret_metrics_class.update({'Class': self.class_names})
         ret_metrics_class.move_to_end('Class', last=False)
 
         # 生成表格输出
         class_table_data = PrettyTable()
         for key, val in ret_metrics_class.items():
-            class_table_data.add_column(key, val)
+            if key != self.class_names[self.ignore_index]:
+                class_table_data.add_column(key, val)
 
         # print_log('per class results:', logger)
-        # print_log('\n' + class_table_data.get_string(), logger=logger)
+        print('\n' + class_table_data.get_string())
 
         return metrics
 
@@ -243,7 +244,7 @@ class SegEvaluator():
         for i in range(len(labels_gt)):
             gt = labels_gt[i].cuda()
             pred_label = pred_labels[i]
-            intersect = pred_label[pred_label == gt]
+            intersect = pred_label[pred_label == gt]  # intersect 包含的是预测标签中与真实标签匹配的所有像素值
             area_inter = torch.histc(intersect.float(),
                                      bins=(num_classes),
                                      min=0,
@@ -257,13 +258,14 @@ class SegEvaluator():
                                     max=num_classes - 1).cpu()
             area_pred_label.append(area_pred)
 
-            area_gt = torch.histc(label.float(),
+            area_gt = torch.histc(gt.float(),
                                   bins=(num_classes),
                                   min=0,
                                   max=num_classes - 1).cpu()
             area_label.append(area_gt)
 
             area_union.append(area_gt + area_pred - area_inter)
+
         return area_intersect, area_union, area_pred_label, area_label
 
     @staticmethod
@@ -351,3 +353,129 @@ class SegEvaluator():
                 for metric, metric_value in ret_metrics.items()
             })
         return ret_metrics
+
+    def plot_results(self,
+                     batch_idx,
+                     pred_batch,
+                     batch_infos,
+                     opacity=0.5):
+        """Draw `result` over `img`.
+
+        Args:
+            img (str or Tensor): The image to be displayed.
+            result (Tensor): The semantic segmentation results to draw over
+                `img`.
+            palette (list[list[int]]] | np.ndarray | None): The palette of
+                segmentation map. If None is given, random palette will be
+                generated. Default: None
+            win_name (str): The window name.
+            wait_time (int): Value of waitKey param.
+                Default: 0.
+            show (bool): Whether to show the image.
+                Default: False.
+            out_file (str or None): The filename to write the image.
+                Default: None.
+            opacity(float): Opacity of painted segmentation map.
+                Default 0.5.
+                Must be in (0, 1] range.
+        Returns:
+            img (Tensor): Only if not `show` or `out_file`
+        """
+
+        if self.palette is None:
+            state = np.random.get_state()
+            np.random.seed(42)
+            # random palette
+            palette = np.random.randint(
+                0, 255, size=(len(self.num_classes), 3))
+            np.random.set_state(state)
+        else:
+            palette = self.palette
+
+        palette = np.array(palette)
+        assert palette.shape[0] == self.num_classes
+        assert palette.shape[1] == 3
+        assert len(palette.shape) == 2
+        assert 0 < opacity <= 1.0
+
+        for key, value in pred_batch.items():
+            out_dir = Path(self.output_dir) / 'pred_results'
+            out_dir.mkdir(parents=True, exist_ok=True)
+            processed_images = []
+            for i in range(min(len(value), 16)):
+                img_name = Path(batch_infos['img_file_path'][i]).name
+                img = cv.imread(batch_infos['img_file_path'][i], cv.COLOR_BGR2RGB)
+                seg = value[i].cpu()
+
+                color_seg = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
+                for label, color in enumerate(palette):
+                    color_seg[seg == label, :] = color
+                # convert to BGR
+                color_seg = color_seg[..., ::-1]
+
+                img = img * (1 - opacity) + color_seg * opacity
+                img = img.astype(np.uint8)
+
+                processed_images.append(img)
+
+            MAX_SIZE = 1920  # 最终图像最大尺寸
+
+            # 计算所有图像的平均尺寸作为基准
+            avg_width = sum(img.shape[1] for img in processed_images) // len(processed_images)
+            avg_height = sum(img.shape[0] for img in processed_images) // len(processed_images)
+
+            # 自动计算行列布局（基于图像数量）
+            num_images = len(processed_images)
+            aspect_ratio = avg_width / avg_height
+
+            # 动态计算最优行列数
+            if aspect_ratio > 1:  # 宽大于高
+                num_cols = min(4, num_images)
+                num_rows = math.ceil(num_images / num_cols)
+            else:  # 高大于宽
+                num_rows = min(4, num_images)
+                num_cols = math.ceil(num_images / num_rows)
+
+            # 计算单图最大允许尺寸
+            max_cell_width = min(MAX_SIZE // num_cols, avg_width)
+            max_cell_height = min(MAX_SIZE // num_rows, avg_height)
+
+            # 调整所有图像到统一尺寸（保持宽高比）
+            resized_images = []
+            for img in processed_images:
+                h, w = img.shape[:2]
+                scale = min(max_cell_width / w, max_cell_height / h)
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                resized = cv.resize(img, (new_w, new_h), interpolation=cv.INTER_AREA)
+                resized_images.append(resized)
+
+            # 使用统一尺寸创建画布
+            cell_height = max(img.shape[0] for img in resized_images)
+            cell_width = max(img.shape[1] for img in resized_images)
+
+            # 最终画布尺寸计算（不超过最大尺寸）
+            total_width = min(num_cols * cell_width, MAX_SIZE)
+            total_height = min(num_rows * cell_height, MAX_SIZE)
+
+            combined_img = np.zeros((total_height, total_width, 3), dtype=np.uint8)
+
+            # 拼接图像（自动居中放置）
+            for idx, img in enumerate(resized_images):
+                row = idx // num_cols
+                col = idx % num_cols
+                y_offset = row * cell_height
+                x_offset = col * cell_width
+
+                # 居中放置
+                y_center = (cell_height - img.shape[0]) // 2
+                x_center = (cell_width - img.shape[1]) // 2
+
+                combined_img[
+                    y_offset + y_center: y_offset + y_center + img.shape[0],
+                    x_offset + x_center: x_offset + x_center + img.shape[1]
+                ] = img
+
+            # 保存图像
+            combined_file = out_dir / f"pred_epoch_{self.epoch}_batch_{batch_idx}_{key}.jpg"
+            cv.imwrite(str(combined_file), combined_img)

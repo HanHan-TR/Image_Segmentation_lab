@@ -115,13 +115,12 @@ class ASPPHead(BaseDecodeHead):
                 H, W) which is feature map for last layer of decoder head.
         """
         x = self._transform_inputs(inputs)
-        aspp_outs = [
-            resize(
-                self.image_pool(x),
-                size=x.size()[2:],
-                mode='bilinear',
-                align_corners=self.align_corners)
-        ]
+        pool_out = self.image_pool(x)
+        aspp_outs = [resize(pool_out,
+                            size=x.size()[2:],
+                            mode='bilinear',
+                            align_corners=self.align_corners)
+                     ]
         aspp_outs.extend(self.aspp_modules(x))
         aspp_outs = torch.cat(aspp_outs, dim=1)
         feats = self.bottleneck(aspp_outs)

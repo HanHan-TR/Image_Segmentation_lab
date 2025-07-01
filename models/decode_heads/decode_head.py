@@ -309,7 +309,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 assert len(seg_logit) == len(ori_img_size)
                 rescaled_seg_logit = []
                 for i, ori_size in enumerate(ori_img_size):
-                    single_logit = seg_logit[i]  # (channel, h, w)
+                    single_logit = seg_logit[i].unsqueeze(0)  # (channel, h, w)
                     rescaled_single_logit = resize(input=single_logit,
                                                    size=ori_size,
                                                    mode='bilinear',

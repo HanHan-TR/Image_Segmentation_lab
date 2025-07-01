@@ -84,10 +84,10 @@ def train_one_epoch(epoch, model, data_loader, optimizer, scaler, args):
         images = images.to('cuda')
         labels = labels.to('cuda')
         with torch.cuda.amp.autocast(enabled=args.amp):
-            seg_logits, losses = model(images, img_metas=infos, gt_semantic_seg=labels)  # forward 调用 model.forward_train()
-            loss, log_var = parse_losses(losses)
+            seg_logits, losses = model(images, labels, infos, rescale=False, return_loss=True)
+            losses, log_var = parse_losses(losses)
         optimizer.zero_grad()
-        scaler.scale(loss).backward()
+        scaler.scale(losses).backward()
         scaler.step(optimizer)
         scaler.update()
         current_lr = optimizer.param_groups[0]['lr']
@@ -101,7 +101,7 @@ def train_one_epoch(epoch, model, data_loader, optimizer, scaler, args):
         log_var_str = ", ".join(f"mean {name}:{value :.3f}" for name, value in mean_log_vars.items())
         process_bar.desc = f"epoch[{epoch + 1}/{args.epochs}] {log_var_str} lr:{current_lr}"
 
-    return mean_log_vars
+    return model, mean_log_vars
 
 
 def validate_one_epoch(epoch, model, data_loader, evaluator, args):
@@ -113,7 +113,7 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, args):
         images = images.to('cuda')
         labels = labels.to('cuda')
         with torch.no_grad():
-            seg_logits, losses = model(images, img_metas=infos, gt_semantic_seg=labels, mode='val', rescale=True)  # forward 调用 model.forward_test()
+            seg_logits, losses = model(images, labels, infos, rescale=True, return_loss=True)
             _, log_var = parse_losses(losses)
 
         for name, value in log_var.items():
@@ -127,6 +127,11 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, args):
         # val_seg_logits = dict()
 
         # 计算模型性能指标
-        evaluator.process(pred_batch=seg_logits, labels_batch=infos['ori_seg_gt'])
+        # 模型预测结果与标签值有两种:
+        # 1. tensor:
+        # pred: (N, C, H, W), labels: (N, H, W)
+        # 2. list of tensor:
+        # len(list) == N, pred[i]: (1, C, H, W), labels[i]: (H, W)
+        evaluator.process(batch_idx=i, pred_batch=seg_logits, batch_infos=infos)
 
     metrics = evaluator.compute_metrics()

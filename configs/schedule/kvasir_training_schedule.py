@@ -6,7 +6,7 @@ optimizer = dict(type='SGD',
 optimizer_config = dict()
 # learning policy
 lr_config = dict(type='StepLR',
-                 step_size=3,
+                 step_size=15,
                  gamma=0.1)
 # runtime settings
 runner = dict(type='IterBasedRunner', max_iters=40000)
