@@ -6,8 +6,6 @@
 # 2. 支持 K折交叉验证。 用户可以指定折数K，假设K=5，则会将整个数据平均分成5份，并随机挑选一份作为验证集. 当训练进行了一段时间之后，在选择另外一份作为验证集
 #    将其余的部分作为训练集。如此得以提高数据利用率
 from collections import OrderedDict
-from multiprocessing import process
-import re
 from tqdm import tqdm
 from cv2 import log, mean
 import torch
