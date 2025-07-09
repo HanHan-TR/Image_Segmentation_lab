@@ -203,7 +203,8 @@ class SegEvaluator():
 
         # print_log('per class results:', logger)
         print('\n' + class_table_data.get_string())
-
+        metrics.update(ret_metrics_class)
+        # metrics.pop('Class')
         return metrics
 
     @staticmethod

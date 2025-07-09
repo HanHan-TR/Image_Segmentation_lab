@@ -2,10 +2,12 @@
 import os
 import sys
 import importlib
+
 from io import StringIO
 import types
 import platform
 import torch
+import shutil
 from pathlib import Path, PosixPath
 
 from collections import abc
@@ -149,8 +151,14 @@ def select_device(device='', batch_size=0, newline=True):
     return torch.device(arg)
 
 
-def file2dict(filename):  # ? OK
+def parse_and_backup_config(filename: PosixPath, backup_dir: PosixPath = None, metadata: dict = None):  # ? OK
     (path, file) = os.path.split(filename)
+    if backup_dir:
+        backup_file = backup_dir / file
+        shutil.copy(str(filename), str(backup_dir))
+
+        meta_key = filename.parts[1] + '_config'
+        metadata[meta_key] = str(backup_file)
 
     abspath = os.path.abspath(os.path.expanduser(path))
     sys.path.insert(0, abspath)
@@ -233,3 +241,10 @@ def is_tuple_of(seq, expected_type):
     这是 :func:`is_seq_of` 的一个部分方法。
     """
     return is_seq_of(seq, expected_type, seq_type=tuple)
+
+
+def str_from_dict(input: dict, hyphen: str = '\n'):
+    """将字典转换成可以打印输出的字符串"""
+    max_key_len = max(len(k) for k in input.keys()) + 5
+    result = hyphen.join(f"{key + ':':<{max_key_len}} {value}" for key, value in input.items())
+    return result

@@ -11,7 +11,7 @@ from cv2 import log, mean
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-
+from typing import Optional
 import sys
 import os
 from pathlib import Path
@@ -23,7 +23,8 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from utils.ops import resize
+from utils.ops import add_prefix
+from core.initialize import weights_to_cpu
 TQDM_BAR_FORMAT = '{l_bar}{bar:10}{r_bar}'  # tqdm bar format
 
 
@@ -73,7 +74,7 @@ def parse_losses(losses):
     return loss, log_vars
 
 
-def train_one_epoch(epoch, model, data_loader, optimizer, scaler, args):
+def train_one_epoch(epoch, model, data_loader, optimizer, scaler, schedule_cfg):
     model.train()
     mean_log_vars = OrderedDict()
 
@@ -81,7 +82,7 @@ def train_one_epoch(epoch, model, data_loader, optimizer, scaler, args):
     for i, (images, labels, infos) in process_bar:
         images = images.to('cuda')
         labels = labels.to('cuda')
-        with torch.cuda.amp.autocast(enabled=args.amp):
+        with torch.cuda.amp.autocast(enabled=schedule_cfg.get('amp', False)):
             seg_logits, losses = model(images, labels, infos, rescale=False, return_loss=True)
             losses, log_var = parse_losses(losses)
         optimizer.zero_grad()
@@ -97,12 +98,12 @@ def train_one_epoch(epoch, model, data_loader, optimizer, scaler, args):
             mean_log_vars[name] = (i * mean_log_vars[name] + value) / (i + 1)    # 实时计算并更新平均值
 
         log_var_str = ", ".join(f"mean {name}:{value :.3f}" for name, value in mean_log_vars.items())
-        process_bar.desc = f"epoch[{epoch + 1}/{args.epochs}] {log_var_str} lr:{current_lr}"
+        process_bar.desc = f"epoch[{epoch + 1}/{schedule_cfg.get('epochs', 50)}] {log_var_str} lr:{current_lr}"
 
-    return model, mean_log_vars
+    return mean_log_vars
 
 
-def validate_one_epoch(epoch, model, data_loader, evaluator, args):
+def validate_one_epoch(epoch, model, data_loader, evaluator, schedule_cfg):
     model.eval()
     mean_log_vars = OrderedDict()
 
@@ -121,7 +122,7 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, args):
             mean_log_vars[name] = (i * mean_log_vars[name] + value) / (i + 1)    # 实时计算并更新平均值
 
         log_var_str = ", ".join(f"mean {name}:{value :.3f}" for name, value in mean_log_vars.items())
-        process_bar.desc = f"val epoch[{epoch + 1}/{args.epochs}] {log_var_str}"
+        process_bar.desc = f"val epoch[{epoch + 1}/{schedule_cfg.get('epochs', 50)}] {log_var_str}"
         # val_seg_logits = dict()
 
         # 计算模型性能指标
@@ -133,3 +134,26 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, args):
         evaluator.process(batch_idx=i, pred_batch=seg_logits, batch_infos=infos)
 
     metrics = evaluator.compute_metrics()
+    return mean_log_vars, metrics
+
+
+def save_model(model,
+               metadata: Optional[dict] = None,
+               train_log: Optional[dict] = None,
+               val_log: Optional[dict] = None,
+               metric: Optional[dict] = None,
+               with_aux: Optional[bool] = False,
+               save_path: str = 'model.pth'):
+    train_log = add_prefix(inputs=train_log, prefix='train')
+    metadata.update(train_log)
+    val_log = add_prefix(inputs=val_log, prefix='val')
+    metadata.update(val_log)
+    metric_decode = add_prefix(metric['decode'], prefix='metric.decode')
+    metadata.update(metric_decode)
+    metric_aux = add_prefix(metric['aux'], prefix='metric.aux')
+    metadata.update(metric_aux)
+    metadata.update(with_aux=with_aux)
+
+    checkpoint = {'metadata': metadata,
+                  'state_dict': weights_to_cpu(model.state_dict())}
+    torch.save(checkpoint, save_path)

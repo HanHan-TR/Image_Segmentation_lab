@@ -2,8 +2,8 @@ import re
 import torch
 import os.path as osp
 import numpy as np
+from typing import Any, Callable
 from collections import OrderedDict
-
 from core.mixed_precision import get_dist_info
 
 
@@ -167,4 +167,59 @@ def load_checkpoint_with_prefix(prefix, filename, map_location=None):
                   }
 
     assert state_dict, f'{prefix} is not in the pretrained model'
+    return state_dict
+
+
+def apply_to(data: Any, expr: Callable, apply_func: Callable):
+    """对字典、列表或元组中与表达式匹配的每个元素应用函数。
+
+    例如，如果你想将字典列表中的每个元素从`np.ndarray`转换为`Tensor`，可以使用以下代码:
+
+    Examples:
+        >>> from mmengine.utils import apply_to
+        >>> import numpy as np
+        >>> import torch
+        >>> data = dict(array=[np.array(1)]) # {'array': [array(1)]}
+        >>> result = apply_to(data, lambda x: isinstance(x, np.ndarray), lambda x: torch.from_numpy(x))
+        >>> print(result) # {'array': [tensor(1)]}
+
+    Args:
+        data (Any): 待应用的数据.
+        expr (Callable): 用于判断哪些数据应被该函数处理的表达式。它应返回一个布尔值.
+        apply_func (Callable): 应用于数据的函数.
+
+    Returns:
+        Any: 应用后的数据.
+    """  # noqa: E501
+    if isinstance(data, dict):
+        # Keep the original dict type
+        res = type(data)()
+        for key, value in data.items():
+            res[key] = apply_to(value, expr, apply_func)
+        return res
+    elif isinstance(data, tuple) and hasattr(data, '_fields'):
+        # namedtuple
+        return type(data)(*(apply_to(sample, expr, apply_func) for sample in data))  # type: ignore  # noqa: E501  # yapf:disable
+    elif isinstance(data, (tuple, list)):
+        return type(data)(apply_to(sample, expr, apply_func) for sample in data)  # type: ignore  # noqa: E501  # yapf:disable
+    elif expr(data):
+        return apply_func(data)
+    else:
+        return data
+
+
+def weights_to_cpu(state_dict):
+    """将模型的state_dict复制到CPU。
+
+    Args:
+        state_dict (OrderedDict): 模型在GPU上的权重。
+
+    Returns:
+        OrderedDict: CPU上的模型权重
+    """
+    metadata = getattr(state_dict, '_metadata', OrderedDict())
+    state_dict = apply_to(data=state_dict,
+                          expr=lambda x: hasattr(x, 'cpu'),
+                          apply_func=lambda x: x.cpu())
+    state_dict._metadata = metadata
     return state_dict

@@ -31,14 +31,15 @@ class EncoderDecoder(BaseSegmentor):
     """
 
     def __init__(self,
-                 backbone,
-                 decode_head,
-                 neck=None,
-                 auxiliary_head=None,
-                 train_cfg=None,
-                 test_cfg=None,
-                 pretrained=None,
-                 init_cfg=None):
+                 backbone: dict,
+                 decode_head: dict,
+                 neck: dict = None,
+                 auxiliary_head: dict = None,
+                 with_aux: bool = True,
+                 train_cfg: dict = None,
+                 test_cfg: dict = None,
+                 pretrained: str = None,
+                 init_cfg: dict = None):
         super(EncoderDecoder, self).__init__(init_cfg)
         assert not (init_cfg and pretrained), \
             'init_cfg and pretrained cannot be setting at the same time'
@@ -52,7 +53,8 @@ class EncoderDecoder(BaseSegmentor):
         if neck is not None:
             self.neck = build_from_cfg(cfg=neck, registry=NECK)
         self._init_decode_head(decode_head)
-        self._init_auxiliary_head(auxiliary_head)
+        if with_aux and auxiliary_head:
+            self._init_auxiliary_head(auxiliary_head)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg

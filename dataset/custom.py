@@ -97,6 +97,7 @@ class CustomDataset(Dataset):
         self.reduce_zero_label = reduce_zero_label
         self.label_map = None
         self.CLASSES, self.PALETTE = self.get_classes_and_palette(classes, palette)
+        self.num_classes = len(self.CLASSES)
 
         self.ori_img_size = ori_img_size
         if self.ori_img_size:

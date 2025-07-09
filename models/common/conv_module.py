@@ -11,7 +11,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from core.registry.builder import build_conv_layer, build_norm_layer, build_activation_layer, build_padding_layer
-from core.initialize import kaiming_init, constant_init
+from core.initialize.init_functions import kaiming_init, constant_init
 import copy
 
 

@@ -1,14 +1,22 @@
+seed = 123
+deterministic = True
+
+epochs = 60
+
+train_batch_size = 16
+val_batch_size = 8
+
+num_workers = 4
+
 # optimizer
 optimizer = dict(type='SGD',
                  lr=0.01,
                  momentum=0.9,
                  weight_decay=0.0005)
-optimizer_config = dict()
 # learning policy
 lr_config = dict(type='StepLR',
                  step_size=15,
                  gamma=0.1)
+
 # runtime settings
-runner = dict(type='IterBasedRunner', max_iters=40000)
-checkpoint_config = dict(by_epoch=False, interval=4000)
-evaluation = dict(interval=4000, metric='mIoU', pre_eval=True)
+amp = True

@@ -5,7 +5,8 @@ from .weight_init import (Caffe2XavierInit, ConstantInit,
                           constant_init, initialize, kaiming_init, normal_init,
                           trunc_normal_init, uniform_init, xavier_init)
 from .seed_init import init_random_seed, set_random_seed
-
+from .checkpoint import (load_state_dict, load_checkpoint, load_checkpoint_with_prefix, load_from_local,
+                         weights_to_cpu, apply_to)
 __all__ = [
     'bias_init_with_prob',
     'caffe2_xavier_init',
@@ -25,5 +26,7 @@ __all__ = [
     'PretrainedInit',
     'Caffe2XavierInit',
     'init_random_seed',
-    'set_random_seed'
+    'set_random_seed',
+    'load_state_dict', 'load_checkpoint', 'load_checkpoint_with_prefix', 'load_from_local',
+    'weights_to_cpu', 'apply_to',
 ]
