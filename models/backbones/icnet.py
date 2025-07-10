@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from models.common import BaseModule, ConvModule
+from models.common.base_module import BaseModule
+from models.common.conv_module import ConvModule
 from models.decode_heads.psp_head import PPM
 from utils import resize
 from core.registry import BACKBONE, build_from_cfg

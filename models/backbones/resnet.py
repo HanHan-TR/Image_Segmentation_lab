@@ -17,8 +17,8 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from core.registry import build_conv_layer, build_norm_layer, build_plugin_layer, BACKBONE
-from models.utils import ResLayer
-from models.common import BaseModule
+from models.utils.res_layer import ResLayer
+from models.common.base_module import BaseModule
 
 
 class BasicBlock(BaseModule):

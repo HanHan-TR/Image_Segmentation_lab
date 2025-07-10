@@ -15,10 +15,10 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from models.common import BaseModule, ModuleList, Sequential
+from core.registry import build_conv_layer, build_norm_layer, BACKBONE
+from models.common.base_module import BaseModule, ModuleList, Sequential
 from models.backbones.resnet import BasicBlock, Bottleneck
 from utils import Upsample, resize
-from core.registry import build_conv_layer, build_norm_layer, BACKBONE
 
 
 class HRModule(BaseModule):

@@ -217,9 +217,7 @@ def weights_to_cpu(state_dict):
     Returns:
         OrderedDict: CPU上的模型权重
     """
-    metadata = getattr(state_dict, '_metadata', OrderedDict())
     state_dict = apply_to(data=state_dict,
                           expr=lambda x: hasattr(x, 'cpu'),
                           apply_func=lambda x: x.cpu())
-    state_dict._metadata = metadata
     return state_dict

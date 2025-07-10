@@ -55,6 +55,8 @@ from .builder import (
 from dataset import *
 from core.initialize import *
 from models.basic import *
+from models.common import *
+from models.utils import *
 from models.backbones import *
 from models.decode_heads import *
 from models.losses import *

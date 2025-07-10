@@ -158,7 +158,8 @@ def parse_and_backup_config(filename: PosixPath, backup_dir: PosixPath = None, m
         shutil.copy(str(filename), str(backup_dir))
 
         meta_key = filename.parts[1] + '_config'
-        metadata[meta_key] = str(backup_file)
+        if isinstance(metadata, dict):
+            metadata[meta_key] = str(backup_file)
 
     abspath = os.path.abspath(os.path.expanduser(path))
     sys.path.insert(0, abspath)
@@ -189,6 +190,25 @@ def add_prefix(inputs, prefix):
     outputs = dict()
     for name, value in inputs.items():
         outputs[f'{prefix}.{name}'] = value
+
+    return outputs
+
+
+def add_suffix(inputs, suffix):
+    """Add suffix for dict.
+
+    Args:
+        inputs (dict): The input dict with str keys.
+        suffix (str): The suffix to add.
+
+    Returns:
+
+        dict: The dict with keys updated with ``suffix``.
+    """
+
+    outputs = dict()
+    for name, value in inputs.items():
+        outputs[f'{name}.{suffix}'] = value
 
     return outputs
 

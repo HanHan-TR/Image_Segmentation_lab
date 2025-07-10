@@ -69,6 +69,8 @@ def main():
     # last_pt, best_pt = weights_dir / 'last.pt', weights_dir / 'best.pt'
     # Step 2 ---------------------------------------------- 读取配置文件与命令行参数 -----------------------------------------
     metadata = dict()
+    metadata.update(time=datetime.now().strftime(format="%Y-%m-%d %H:%M:%S"))
+    metadata.update(get_environment_info())
     network_cfg = parse_and_backup_config(filename=args.network_cfg,
                                           backup_dir=config_dir,
                                           metadata=metadata).pop('model')
@@ -80,10 +82,8 @@ def main():
                                            metadata=metadata)
     # Step 3 ---------------------------------------------- 设备选择，设置随机种子----------------------------------------------
     seed = init_random_seed(seed=schedule_cfg.get('seed', 0), device=args.device)
+    metadata.update(seed=seed)
     set_random_seed(seed=seed, deterministic=schedule_cfg.get('deterministic', False))
-
-    metadata.update(time=datetime.now().strftime(format="%Y-%m-%d %H:%M:%S"))
-    metadata.update(get_environment_info())
     # Step 4 搭建语义分割网络模型 （模型权重初始化）
     model = build_segmentor(cfg=network_cfg)
     print(model)
@@ -110,6 +110,9 @@ def main():
                                 num_workers=schedule_cfg.get('num_workers', 4),
                                 pin_memory=False,
                                 collate_fn=val_dataset.collate_fn)
+
+    metadata.update(CLASSES=train_dataset.CLASSES,
+                    PALETTE=train_dataset.PALETTE)
     scaler = torch.cuda.amp.GradScaler(enabled=schedule_cfg.get('amp', False))  # 混合精度训练
 
     for epoch in range(schedule_cfg.get('epochs', 50)):

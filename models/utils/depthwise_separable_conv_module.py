@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from models.common import ConvModule
+from models.common.conv_module import ConvModule
 
 
 class DepthwiseSeparableConvModule(nn.Module):

@@ -2,7 +2,7 @@
 import warnings
 from typing import Optional, Union
 import torch
-
+import numpy as np
 import sys
 import os
 from pathlib import Path
@@ -21,22 +21,22 @@ RANK = int(os.getenv('RANK', -1))
 # from mmengine.runner import load_checkpoint
 # from mmengine.utils import mkdir_or_exist
 
-from core.fileio import file2dict
+from core.fileio import parse_and_backup_config, mkdir_or_exist
+from core.fileio.image_io import imread
 from core.initialize import load_checkpoint
 from models.segmentors import BaseSegmentor
 from core.registry import build_segmentor
 
-from mmseg.registry import MODELS
-from mmseg.structures import SegDataSample
-from mmseg.utils import SampleList, dataset_aliases, get_classes, get_palette
-from mmseg.visualization import SegLocalVisualizer
-from .utils import ImageType, _preprare_data
+# from mmseg.registry import MODELS
+# from mmseg.structures import SegDataSample
+# from mmseg.utils import SampleList, dataset_aliases, get_classes, get_palette
+# from mmseg.visualization import SegLocalVisualizer
+# from .utils import ImageType, _preprare_data
 
 
 def init_model(config: Union[str, Path],
                checkpoint: Optional[str] = None,
-               device: str = 'cuda:0',
-               cfg_options: Optional[dict] = None):
+               device: str = 'cuda:0'):
     """Initialize a segmentor from config file.
 
     Args:
@@ -53,7 +53,7 @@ def init_model(config: Union[str, Path],
     """
     # 解析模型配置文件
     if isinstance(config, (str, Path)):
-        network_config = file2dict(config).pop('model')
+        network_config = parse_and_backup_config(config).pop('model')
     else:
         raise TypeError('config must be a file path, '
                         'but got {}'.format(type(config)))
@@ -90,23 +90,23 @@ def init_model(config: Union[str, Path],
             classes = checkpoint['meta']['CLASSES']
             palette = checkpoint['meta']['PALETTE']
             model.dataset_meta = {'classes': classes, 'palette': palette}
-        else:
-            warnings.simplefilter('once')
-            warnings.warn('dataset_meta or class names are not saved in the '
-                          'checkpoint\'s meta data, classes and palette will be'
-                          'set according to num_classes ')
-            num_classes = model.decode_head.num_classes
-            dataset_name = None
-            for name in dataset_aliases.keys():
-                if len(get_classes(name)) == num_classes:
-                    dataset_name = name
-                    break
-            if dataset_name is None:
-                warnings.warn('No suitable dataset found, use Cityscapes by default')
-                dataset_name = 'cityscapes'
-            model.dataset_meta = {'classes': get_classes(dataset_name),
-                                  'palette': get_palette(dataset_name)
-                                  }
+        # else:
+        #     warnings.simplefilter('once')
+        #     warnings.warn('dataset_meta or class names are not saved in the '
+        #                   'checkpoint\'s meta data, classes and palette will be'
+        #                   'set according to num_classes ')
+        #     num_classes = model.decode_head.num_classes
+        #     dataset_name = None
+        #     for name in dataset_aliases.keys():
+        #         if len(get_classes(name)) == num_classes:
+        #             dataset_name = name
+        #             break
+        #     if dataset_name is None:
+        #         warnings.warn('No suitable dataset found, use Cityscapes by default')
+        #         dataset_name = 'cityscapes'
+        #     model.dataset_meta = {'classes': get_classes(dataset_name),
+        #                           'palette': get_palette(dataset_name)
+        #                           }
     model.cfg = network_config  # save the config in the model for convenience
     model.to(device)
     model.eval()
@@ -114,7 +114,7 @@ def init_model(config: Union[str, Path],
 
 
 def inference_model(model: BaseSegmentor,
-                    img: ImageType) -> Union[SegDataSample, SampleList]:
+                    img):  # -> Union[SegDataSample, SampleList]:
     """Inference image(s) with the segmentor.
 
     Args:
@@ -128,7 +128,8 @@ def inference_model(model: BaseSegmentor,
         will be returned, otherwise return the segmentation results directly.
     """
     # prepare data
-    data, is_batch = _preprare_data(img, model)
+    # data, is_batch = _preprare_data(img, model)
+    data, is_batch = img, model
 
     # forward the model
     with torch.no_grad():
@@ -139,7 +140,7 @@ def inference_model(model: BaseSegmentor,
 
 def show_result_pyplot(model: BaseSegmentor,
                        img: Union[str, np.ndarray],
-                       result: SegDataSample,
+                       result,  # : SegDataSample,
                        opacity: float = 0.5,
                        title: str = '',
                        draw_gt: bool = True,
@@ -180,28 +181,27 @@ def show_result_pyplot(model: BaseSegmentor,
     if hasattr(model, 'module'):
         model = model.module
     if isinstance(img, str):
-        image = mmcv.imread(img, channel_order='rgb')
+        image = imread(img, channel_order='rgb')
     else:
         image = img
     if save_dir is not None:
         mkdir_or_exist(save_dir)
     # init visualizer
-    visualizer = SegLocalVisualizer(
-        vis_backends=[dict(type='LocalVisBackend')],
-        save_dir=save_dir,
-        alpha=opacity)
-    visualizer.dataset_meta = dict(
-        classes=model.dataset_meta['classes'],
-        palette=model.dataset_meta['palette'])
-    visualizer.add_datasample(name=title,
-                              image=image,
-                              data_sample=result,
-                              draw_gt=draw_gt,
-                              draw_pred=draw_pred,
-                              wait_time=wait_time,
-                              out_file=out_file,
-                              show=show,
-                              with_labels=with_labels)
-    vis_img = visualizer.get_image()
+    # visualizer = SegLocalVisualizer(vis_backends=[dict(type='LocalVisBackend')],
+    #                                 save_dir=save_dir,
+    #                                 alpha=opacity)
+    # visualizer.dataset_meta = dict(
+    #     classes=model.dataset_meta['classes'],
+    #     palette=model.dataset_meta['palette'])
+    # visualizer.add_datasample(name=title,
+    #                           image=image,
+    #                           data_sample=result,
+    #                           draw_gt=draw_gt,
+    #                           draw_pred=draw_pred,
+    #                           wait_time=wait_time,
+    #                           out_file=out_file,
+    #                           show=show,
+    #                           with_labels=with_labels)
+    # vis_img = visualizer.get_image()
 
-    return vis_img
+    # return vis_img

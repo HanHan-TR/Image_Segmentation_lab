@@ -4,18 +4,30 @@ requirement: pip install grad-cam
 """
 
 from argparse import ArgumentParser
-
 import numpy as np
 import torch
 import torch.nn.functional as F
-from mmengine import Config
-from mmengine.model import revert_sync_batchnorm
 from PIL import Image
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import preprocess_image, show_cam_on_image
 
-from mmseg.apis import inference_model, init_model, show_result_pyplot
-from mmseg.utils import register_all_modules
+import sys
+import os
+from pathlib import Path
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]  # root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+RANK = int(os.getenv('RANK', -1))
+
+from models.utils.operations import revert_sync_batchnorm
+# from mmengine import Config
+from core.fileio import parse_and_backup_config
+from core.inference.infer import init_model, inference_model, show_result_pyplot
+# from mmseg.apis import inference_model, init_model, show_result_pyplot
+# from mmseg.utils import register_all_modules
 
 
 class SemanticSegmentationTarget:
@@ -46,13 +58,14 @@ class SemanticSegmentationTarget:
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('img', help='Image file')
-    parser.add_argument('config', help='Config file')
-    parser.add_argument('checkpoint', help='Checkpoint file')
-    parser.add_argument(
-        '--out-file',
-        default='prediction.png',
-        help='Path to output prediction file')
+    parser.add_argument('img', default='', help='Image file')
+    parser.add_argument('config',
+                        default=ROOT / 'configs/network/deeplabv3/deeplabv3_r50-d8.py',
+                        help='Config file')
+    parser.add_argument('checkpoint', default='res/train/CarinaShifting/exp15/weights/last.pth', help='Checkpoint file')
+    parser.add_argument('--out-file',
+                        default='prediction.png',
+                        help='Path to output prediction file')
     parser.add_argument(
         '--cam-file', default='vis_cam.png', help='Path to output cam file')
     parser.add_argument(
@@ -66,8 +79,7 @@ def main():
     args = parser.parse_args()
 
     # build the model from a config file and a checkpoint file
-    register_all_modules()
-    model = init_model(args.config, args.checkpoint, device=args.device)
+    model = init_model(args.config, args.checkpoint, device=args.device)  # 网络模型
     if args.device == 'cpu':
         model = revert_sync_batchnorm(model)
 
@@ -96,7 +108,7 @@ def main():
     image = np.array(Image.open(args.img).convert('RGB'))
     height, width = image.shape[0], image.shape[1]
     rgb_img = np.float32(image) / 255
-    config = Config.fromfile(args.config)
+    config = parse_and_backup_config(args.config)  # Config.fromfile(args.config)
     image_mean = config.data_preprocessor['mean']
     image_std = config.data_preprocessor['std']
     input_tensor = preprocess_image(rgb_img,

@@ -148,10 +148,11 @@ def save_model(model,
     metadata.update(train_log)
     val_log = add_prefix(inputs=val_log, prefix='val')
     metadata.update(val_log)
-    metric_decode = add_prefix(metric['decode'], prefix='metric.decode')
-    metadata.update(metric_decode)
-    metric_aux = add_prefix(metric['aux'], prefix='metric.aux')
-    metadata.update(metric_aux)
+
+    for key, value in metric.items():
+        sub_metric = add_prefix(value, prefix='metric.' + key)
+        metadata.update(sub_metric)
+
     metadata.update(with_aux=with_aux)
 
     checkpoint = {'metadata': metadata,
