@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from core.registry import build_conv_layer, build_norm_layer
+from models.builder import build_conv_layer, build_norm_layer
 from models.common.base_module import Sequential
 
 

@@ -17,7 +17,7 @@ from models.common import Conv2dAdaptivePadding
 from models.utils import InvertedResidualV3 as InvertedResidual
 
 from core.fileio import is_tuple_of
-from core.registry import BACKBONE
+from models.builder import BACKBONE
 
 
 @BACKBONE.register()

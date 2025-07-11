@@ -14,8 +14,9 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
+from models import build_segmentor
 from core.initialize import init_random_seed, set_random_seed
-from core.registry import DATASET, LR_SCHEDULER, build_segmentor, build_optimizer, build_from_cfg
+from core.builder import DATASET, LR_SCHEDULER, build_optimizer, build_from_cfg
 from core.evaluation import SegEvaluator
 from core.fileio import parse_and_backup_config, increment_path
 from utils.train_utils import train_one_epoch, validate_one_epoch, save_model

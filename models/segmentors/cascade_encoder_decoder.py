@@ -13,7 +13,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from utils import add_prefix, resize
-from core.registry import SEGMENTOR, DECODEHEAD, build_from_cfg
+from models.builder import SEGMENTOR, DECODEHEAD, build_module_from_cfg
 from models.segmentors.encoder_decoder import EncoderDecoder
 
 
@@ -53,7 +53,7 @@ class CascadeEncoderDecoder(EncoderDecoder):
         assert len(decode_head) == self.num_stages
         self.decode_head = nn.ModuleList()
         for i in range(self.num_stages):
-            self.decode_head.append(build_from_cfg(cfg=decode_head[i], registry=DECODEHEAD))
+            self.decode_head.append(build_module_from_cfg(cfg=decode_head[i], registry=DECODEHEAD))
         self.align_corners = self.decode_head[-1].align_corners
         self.num_classes = self.decode_head[-1].num_classes
         self.out_channels = self.decode_head[-1].out_channels

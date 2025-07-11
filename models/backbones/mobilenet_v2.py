@@ -18,7 +18,7 @@ RANK = int(os.getenv('RANK', -1))
 from models.common import ConvModule, BaseModule
 from models.utils import InvertedResidual
 from utils import make_divisible
-from core.registry import BACKBONE
+from models.builder import BACKBONE
 
 
 @BACKBONE.register()

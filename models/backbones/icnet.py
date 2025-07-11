@@ -17,7 +17,7 @@ from models.common.base_module import BaseModule
 from models.common.conv_module import ConvModule
 from models.decode_heads.psp_head import PPM
 from utils import resize
-from core.registry import BACKBONE, build_from_cfg
+from models.builder import BACKBONE, build_module_from_cfg
 
 
 @BACKBONE.register()
@@ -77,7 +77,7 @@ class ICNet(BaseModule):
             ]
         super(ICNet, self).__init__(init_cfg=init_cfg)
         self.align_corners = align_corners
-        self.backbone = build_from_cfg(backbone_cfg, registry=BACKBONE)
+        self.backbone = build_module_from_cfg(backbone_cfg, registry=BACKBONE)
 
         # Note: Default `ceil_mode` is false in nn.MaxPool2d, set
         # `ceil_mode=True` to keep information in the corner of feature map.

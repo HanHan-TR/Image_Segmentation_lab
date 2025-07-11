@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from core.registry import LR_SCHEDULER
+from core.builder import LR_SCHEDULER
 
 
 @LR_SCHEDULER.register()

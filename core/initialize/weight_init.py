@@ -11,7 +11,7 @@ from torch import Tensor
 from core.initialize.init_functions import (_get_bases_name, constant_init, caffe2_xavier_init,
                                             normal_init, xavier_init, kaiming_init, uniform_init, trunc_normal_init,
                                             update_init_info, bias_init_with_prob)
-from core.registry import INITIALIZERS, build_from_cfg
+from core.builder import INITIALIZERS, build_from_cfg
 
 
 class BaseInit(object):

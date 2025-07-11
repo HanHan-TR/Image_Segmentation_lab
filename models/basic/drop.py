@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from core.registry import DROPOUT
+from models.builder import DROPOUT
 
 
 def drop_path(x, drop_prob=0., training=False):

@@ -17,7 +17,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from models.losses.utils import get_class_weight, weight_reduce_loss
-from core.registry import LOSS
+from models.builder import LOSS
 
 
 def cross_entropy(pred,

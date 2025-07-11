@@ -17,7 +17,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
 from utils import add_prefix, resize
-from core.registry import BACKBONE, SEGMENTOR, NECK, DECODEHEAD, build_from_cfg
+from models.builder import BACKBONE, SEGMENTOR, NECK, DECODEHEAD, build_module_from_cfg
 from .base import BaseSegmentor
 
 
@@ -49,9 +49,9 @@ class EncoderDecoder(BaseSegmentor):
             assert backbone.get('pretrained') is None, \
                 'both backbone and segmentor set pretrained weight'
             # backbone.pretrained = pretrained
-        self.backbone = build_from_cfg(cfg=backbone, registry=BACKBONE)
+        self.backbone = build_module_from_cfg(cfg=backbone, registry=BACKBONE)
         if neck is not None:
-            self.neck = build_from_cfg(cfg=neck, registry=NECK)
+            self.neck = build_module_from_cfg(cfg=neck, registry=NECK)
         self._init_decode_head(decode_head)
         if with_aux and auxiliary_head:
             self._init_auxiliary_head(auxiliary_head)
@@ -64,7 +64,7 @@ class EncoderDecoder(BaseSegmentor):
 
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
-        self.decode_head = build_from_cfg(decode_head, registry=DECODEHEAD)
+        self.decode_head = build_module_from_cfg(decode_head, registry=DECODEHEAD)
         self.align_corners = self.decode_head.align_corners
         self.num_classes = self.decode_head.num_classes
         self.out_channels = self.decode_head.out_channels
@@ -75,9 +75,9 @@ class EncoderDecoder(BaseSegmentor):
             if isinstance(auxiliary_head, list):
                 self.auxiliary_head = nn.ModuleList()
                 for head_cfg in auxiliary_head:
-                    self.auxiliary_head.append(build_from_cfg(head_cfg, registry=DECODEHEAD))
+                    self.auxiliary_head.append(build_module_from_cfg(head_cfg, registry=DECODEHEAD))
             else:
-                self.auxiliary_head = build_from_cfg(auxiliary_head, registry=DECODEHEAD)
+                self.auxiliary_head = build_module_from_cfg(auxiliary_head, registry=DECODEHEAD)
 
     def extract_feat(self, img):
         """Extract features from images."""

@@ -25,7 +25,7 @@ from core.fileio import parse_and_backup_config, mkdir_or_exist
 from core.fileio.image_io import imread
 from core.initialize import load_checkpoint
 from models.segmentors import BaseSegmentor
-from core.registry import build_segmentor
+from models.builder import build_segmentor
 
 # from mmseg.registry import MODELS
 # from mmseg.structures import SegDataSample

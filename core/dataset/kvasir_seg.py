@@ -11,8 +11,8 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from dataset.custom import CustomDataset
-from core.registry import DATASET
+from core.dataset.custom import CustomDataset
+from core.builder import DATASET
 
 
 @DATASET.register()

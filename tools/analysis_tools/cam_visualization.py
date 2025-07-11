@@ -58,11 +58,11 @@ class SemanticSegmentationTarget:
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('img', default='', help='Image file')
-    parser.add_argument('config',
+    parser.add_argument('--img', default='', help='Image file')
+    parser.add_argument('--config',
                         default=ROOT / 'configs/network/deeplabv3/deeplabv3_r50-d8.py',
                         help='Config file')
-    parser.add_argument('checkpoint', default='res/train/CarinaShifting/exp15/weights/last.pth', help='Checkpoint file')
+    parser.add_argument('--checkpoint', default='res/train/CarinaShifting/exp15/weights/last.pth', help='Checkpoint file')
     parser.add_argument('--out-file',
                         default='prediction.png',
                         help='Path to output prediction file')

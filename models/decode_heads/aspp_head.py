@@ -16,7 +16,7 @@ RANK = int(os.getenv('RANK', -1))
 from models.common import ConvModule
 from models.decode_heads import BaseDecodeHead
 from utils import resize
-from core.registry import DECODEHEAD
+from models.builder import DECODEHEAD
 
 
 class ASPPModule(nn.ModuleList):

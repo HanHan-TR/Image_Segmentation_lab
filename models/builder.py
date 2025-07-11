@@ -17,13 +17,29 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-# from core.registry.register import RegisterMeta
-from core.registry import (RegisterMeta,
-                           ACTIVATION, NORMALIZATION, CONVOLUTION, PADDING, DROPOUT, LOSS,
-                           PLUGINS,
-                           SAMPLER,
-                           SEGMENTOR,
-                           OPTIMIZER)
+# # from core.registry.register import RegisterMeta
+# from registry import (RegisterMeta,
+#                       ACTIVATION, NORMALIZATION, CONVOLUTION, PADDING, DROPOUT, LOSS,
+#                       PLUGINS,
+#                       SAMPLER,
+#                       SEGMENTOR,
+#                       OPTIMIZER)
+from registry import RegisterManager, RegisterMeta
+# ---------------------- models -----------------------------------
+ACTIVATION = RegisterManager.create_registry('ACTIVATION')
+CONVOLUTION = RegisterManager.create_registry('CONVOLUTION')
+DROPOUT = RegisterManager.create_registry('DROPOUT')
+NORMALIZATION = RegisterManager.create_registry('NORMALIZATION')
+PADDING = RegisterManager.create_registry('PADDING')
+PLUGINS = RegisterManager.create_registry('PLUGINS')
+
+BACKBONE = RegisterManager.create_registry('BACKBONE')
+NECK = RegisterManager.create_registry('NECK')
+DECODEHEAD = RegisterManager.create_registry('DECODEHEAD')
+SEGMENTOR = RegisterManager.create_registry('SEGMENTOR')
+LOSS = RegisterManager.create_registry('LOSS')
+
+_MODULE = (BACKBONE, NECK, DECODEHEAD, LOSS)
 
 
 def build_conv_layer(cfg, *args, **kwargs):
@@ -344,7 +360,7 @@ def build_plugin_layer(cfg, postfix='', **kwargs):
     return name, layer
 
 
-def build_from_cfg(cfg, registry, default_args=None):
+def build_module_from_cfg(cfg, registry, default_args=None):
     """Build a module from config dict.
 
     Args:
@@ -362,8 +378,9 @@ def build_from_cfg(cfg, registry, default_args=None):
             raise KeyError(
                 '`cfg` or `default_args` must contain the key "type", '
                 f'but got {cfg}\n{default_args}')
-    if not isinstance(registry, RegisterMeta):
-        raise TypeError(f'registry must be an RegisterMeta object, but got {type(registry)}')
+    # if not isinstance(registry, RegisterMeta):
+    if registry not in _MODULE:
+        raise TypeError(f'registry must be one of {str(_MODULE)}, but got {type(registry)}')
     if not (isinstance(default_args, dict) or default_args is None):
         raise TypeError(f'default_args must be a dict or None, but got {type(default_args)}')
 
@@ -389,11 +406,6 @@ def build_from_cfg(cfg, registry, default_args=None):
         raise type(e)(f'{obj_cls.__name__}: {e}')
 
 
-def build_pixel_sampler(cfg, **default_args):
-    """Build pixel sampler for segmentation map."""
-    return build_from_cfg(cfg, SAMPLER, default_args)
-
-
 def build_segmentor(cfg):
     """Build Segmentor
 
@@ -410,14 +422,3 @@ def build_segmentor(cfg):
     segmentor_type = cfg_.pop('type')
     segmentor = SEGMENTOR.get(segmentor_type)
     return segmentor(**cfg_)
-
-
-def build_optimizer(cfg, params):
-    if not isinstance(cfg, dict):
-        raise TypeError('The cfg in build_optimizer function must be a dict.')
-    if 'type' not in cfg:
-        raise KeyError('The cfg in build_optimizer function must contain the key "type". ')
-    cfg_ = cfg.copy()
-    optimizer_type = cfg_.pop('type')
-    optimizer = OPTIMIZER.get(optimizer_type)
-    return optimizer(params=params, **cfg_)

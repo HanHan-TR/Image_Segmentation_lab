@@ -19,7 +19,8 @@ RANK = int(os.getenv('RANK', -1))
 
 from models.common import BaseModule
 from models.losses import accuracy
-from core.registry import build_pixel_sampler, build_loss
+from core.builder import build_from_cfg, SAMPLER  # build_pixel_sampler,
+from models.builder import build_loss
 from utils import resize
 
 
@@ -133,7 +134,7 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                 but got {type(loss_decode)}')
 
         if sampler is not None:
-            self.sampler = build_pixel_sampler(sampler, context=self)
+            self.sampler = build_from_cfg(cfg=sampler, registry=SAMPLER, context=self)  # build_pixel_sampler(sampler, context=self)
         else:
             self.sampler = None
 

@@ -15,7 +15,7 @@ RANK = int(os.getenv('RANK', -1))
 
 from models.common import ConvModule
 from models.decode_heads import BaseDecodeHead
-from core.registry import DECODEHEAD
+from models.builder import DECODEHEAD
 
 
 @DECODEHEAD.register()
