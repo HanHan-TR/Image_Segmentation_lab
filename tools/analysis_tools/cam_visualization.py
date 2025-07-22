@@ -52,17 +52,23 @@ class SemanticSegmentationTarget:
         model_output = torch.unsqueeze(model_output, dim=0)
         model_output = F.interpolate(model_output, size=self.size, mode='bilinear')
         model_output = torch.squeeze(model_output, dim=0)
-
-        return (model_output[self.category, :, :] * self.mask).sum()
+        res = model_output[self.category, :, :] * self.mask
+        res = res.sum()
+        return res
 
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('--img', default='', help='Image file')
+    parser.add_argument('--img',
+                        default='/sharespace/datasets/Kvasir-SEG/images/cju1dhfok4mhe0878jlgrag0h.jpg',
+                        help='Image file')
     parser.add_argument('--config',
                         default=ROOT / 'configs/network/deeplabv3/deeplabv3_r50-d8.py',
                         help='Config file')
-    parser.add_argument('--checkpoint', default='res/train/CarinaShifting/exp15/weights/last.pth', help='Checkpoint file')
+    parser.add_argument('--pipeline',
+                        default=ROOT / 'configs/augmentation/defautlt_val_transform.yaml',
+                        help='pipeline config file')
+    parser.add_argument('--checkpoint', default='res/train/CarinaShifting/exp3/weights/best.pth', help='Checkpoint file')
     parser.add_argument('--out-file',
                         default='prediction.png',
                         help='Path to output prediction file')
@@ -73,7 +79,7 @@ def main():
         default='backbone.layer4[2]',
         help='Target layers to visualize CAM')
     parser.add_argument(
-        '--category-index', default='7', help='Category to visualize CAM')
+        '--category-index', default='1', help='Category to visualize CAM')
     parser.add_argument(
         '--device', default='cuda:0', help='Device used for inference')
     args = parser.parse_args()
@@ -84,19 +90,20 @@ def main():
         model = revert_sync_batchnorm(model)
 
     # test a single image
-    result = inference_model(model, args.img)
+    result = inference_model(model, args.img, pipeline=args.pipeline, device=args.device)
 
     # show the results
-    show_result_pyplot(model,
-                       args.img,
-                       result,
-                       draw_gt=False,
-                       show=False if args.out_file is not None else True,
-                       out_file=args.out_file)
+    # show_result_pyplot(model,
+    #                    args.img,
+    #                    result,
+    #                    draw_gt=False,
+    #                    show=False if args.out_file is not None else True,
+    #                    out_file=args.out_file)
 
     # result data conversion
-    prediction_data = result.pred_sem_seg.data
-    pre_np_data = prediction_data.cpu().numpy().squeeze(0)
+    # prediction_data = result.pred_sem_seg.data
+    prediction_data = result
+    pre_np_data = prediction_data  # .cpu().numpy().squeeze(0)
 
     target_layers = args.target_layers
     target_layers = [eval(f'model.{target_layers}')]
@@ -109,11 +116,9 @@ def main():
     height, width = image.shape[0], image.shape[1]
     rgb_img = np.float32(image) / 255
     config = parse_and_backup_config(args.config)  # Config.fromfile(args.config)
-    image_mean = config.data_preprocessor['mean']
-    image_std = config.data_preprocessor['std']
-    input_tensor = preprocess_image(rgb_img,
-                                    mean=[x / 255 for x in image_mean],
-                                    std=[x / 255 for x in image_std])
+    # image_mean = config.data_preprocessor['mean']
+    # image_std = config.data_preprocessor['std']
+    input_tensor = preprocess_image(rgb_img, mean=[0.563, 0.328, 0.244], std=[0.315, 0.222, 0.190])
 
     # Grad CAM(Class Activation Maps)
     # Can also be LayerCAM, XGradCAM, GradCAMPlusPlus, EigenCAM, EigenGradCAM
@@ -121,9 +126,10 @@ def main():
                                           mask_float,
                                           (height, width))]
     with GradCAM(model=model,
-                 target_layers=target_layers,
-                 use_cuda=torch.cuda.is_available()) as cam:
-        grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0, :]
+                 target_layers=target_layers  # ,use_cuda=torch.cuda.is_available()
+                 ) as cam:
+        grayscale_cam = cam(input_tensor=input_tensor,
+                            targets=targets)[0, :]
         cam_image = show_cam_on_image(rgb_img,
                                       grayscale_cam,
                                       use_rgb=True)

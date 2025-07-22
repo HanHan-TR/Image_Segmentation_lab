@@ -137,14 +137,12 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, schedule_cfg):
     return mean_log_vars, metrics
 
 
-def save_model(model,
-               epoch: int,
-               fits: float,
-               metadata: Optional[dict] = None,
-               train_log: Optional[dict] = None,
-               val_log: Optional[dict] = None,
-               metric: Optional[dict] = None,
-               save_path: str = 'model.pth'):
+def pth_metadata(metadata: Optional[dict],
+                 epoch: int,
+                 fits: float,
+                 train_log: Optional[dict] = None,
+                 val_log: Optional[dict] = None,
+                 metric: Optional[dict] = None):
     metadata.update(epoch=epoch,
                     fits=fits)
     train_log = add_prefix(inputs=train_log, prefix='train')
@@ -156,6 +154,12 @@ def save_model(model,
         sub_metric = add_prefix(value, prefix='metric.' + key)
         metadata.update(sub_metric)
 
+    return metadata
+
+
+def save_model(model,
+               metadata,
+               save_path: str = 'model.pth'):
     checkpoint = {'metadata': metadata,
                   'state_dict': weights_to_cpu(model.state_dict())}
     torch.save(checkpoint, save_path)

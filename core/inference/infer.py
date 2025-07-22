@@ -1,12 +1,14 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import warnings
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 import torch
 import numpy as np
 import sys
 import os
-from pathlib import Path
-
+import cv2 as cv
+from pathlib import Path, PosixPath
+import albumentations as A
+from collections import defaultdict
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[2]  # root directory
 if str(ROOT) not in sys.path:
@@ -14,16 +16,12 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-# import mmcv
-# import numpy as np
-# from mmengine import Config
-# from mmengine.registry import init_default_scope
-# from mmengine.runner import load_checkpoint
-# from mmengine.utils import mkdir_or_exist
 
 from core.fileio import parse_and_backup_config, mkdir_or_exist
+from core.fileio.image_io import ImageType
 from core.fileio.image_io import imread
 from core.initialize import load_checkpoint
+from models.common import BaseModule
 from models.segmentors import BaseSegmentor
 from models.builder import build_segmentor
 
@@ -80,33 +78,12 @@ def init_model(config: Union[str, Path],
     # 加载模型权重
     if checkpoint is not None:
         checkpoint = load_checkpoint(model, checkpoint, map_location='cpu')
-        dataset_meta = checkpoint['meta'].get('dataset_meta', None)
+        metadata = checkpoint.get('metadata', None)
         # save the dataset_meta in the model for convenience
-        if 'dataset_meta' in checkpoint.get('meta', {}):
-            # mmseg 1.x
-            model.dataset_meta = dataset_meta
-        elif 'CLASSES' in checkpoint.get('meta', {}):
-            # < mmseg 1.x
-            classes = checkpoint['meta']['CLASSES']
-            palette = checkpoint['meta']['PALETTE']
-            model.dataset_meta = {'classes': classes, 'palette': palette}
-        # else:
-        #     warnings.simplefilter('once')
-        #     warnings.warn('dataset_meta or class names are not saved in the '
-        #                   'checkpoint\'s meta data, classes and palette will be'
-        #                   'set according to num_classes ')
-        #     num_classes = model.decode_head.num_classes
-        #     dataset_name = None
-        #     for name in dataset_aliases.keys():
-        #         if len(get_classes(name)) == num_classes:
-        #             dataset_name = name
-        #             break
-        #     if dataset_name is None:
-        #         warnings.warn('No suitable dataset found, use Cityscapes by default')
-        #         dataset_name = 'cityscapes'
-        #     model.dataset_meta = {'classes': get_classes(dataset_name),
-        #                           'palette': get_palette(dataset_name)
-        #                           }
+        if metadata:
+            classes = metadata['CLASSES']
+            palette = metadata['PALETTE']
+            model.metadata = {'classes': classes, 'palette': palette}
     model.cfg = network_config  # save the config in the model for convenience
     model.to(device)
     model.eval()
@@ -114,28 +91,67 @@ def init_model(config: Union[str, Path],
 
 
 def inference_model(model: BaseSegmentor,
-                    img):  # -> Union[SegDataSample, SampleList]:
-    """Inference image(s) with the segmentor.
+                    img: Union[Union[str, np.ndarray], Sequence[Union[str, np.ndarray]]],
+                    pipeline: str,
+                    device='cuda'):  # -> Union[SegDataSample, SampleList]:
+    """使用分割器进行模型推理.
 
     Args:
-        model (nn.Module): The loaded segmentor.
-        imgs (str/ndarray or list[str/ndarray]): Either image files or loaded
-            images.
+        model (nn.Module): 已加载的分割器模型.
+        imgs (str/ndarray or list[str/ndarray]): 可以是图像文件路径或者已加载的图像数据.
 
     Returns:
         :obj:`SegDataSample` or list[:obj:`SegDataSample`]:
-        If imgs is a list or tuple, the same length list type results
-        will be returned, otherwise return the segmentation results directly.
+        如果imgs是列表或元组, 将返回相同长度的列表类型结果, 否则直接返回分割结果.
     """
     # prepare data
-    # data, is_batch = _preprare_data(img, model)
-    data, is_batch = img, model
+    images, data_infos, is_batch = _preprare_data(img, pipeline=pipeline, device=device)
 
     # forward the model
     with torch.no_grad():
-        results = model.test_step(data)
+        # results = model.test_step(images)
+        # ! forward_test
+        results = model(images, img_metas=data_infos, rescale=True, return_loss=False)
 
-    return results if is_batch else results[0]
+    seg_pred = results.argmax(dim=1)
+
+    seg_pred = seg_pred.cpu().numpy()
+
+    return seg_pred
+
+
+def _preprare_data(imgs: ImageType,
+                   pipeline: Union[str, PosixPath],
+                   device):
+    # a pipeline for each inference
+    # ! albumentations.Compose 的 __call__ 方法（即 pipeline(image=image)）
+    # ! 要求 image 是一个 ​单张图像​（NumPy 数组，形状为 (H, W, C)），而不是一个图像列表。
+    pipeline = A.load(filepath_or_buffer=pipeline, data_format='yaml') if pipeline else None
+
+    data_infos = defaultdict(list)
+    is_batch = True  # 表示有多张图像
+    if not isinstance(imgs, (list, tuple)):
+        imgs = [imgs]
+        is_batch = False  # 表示只有一张图像
+
+    images = []
+    for img in imgs:
+        if isinstance(img, np.ndarray):  # 已加载的图像数据
+            data_infos['ori_img_size_hw'].append(img.shape[:2])
+            augmented = pipeline(image=img)
+            im = augmented['image']
+        else:  # 图像路径
+            data_infos['img_file_path'].append(img)
+
+            img = cv.imread(filename=img, flags=cv.COLOR_BGR2RGB)
+            data_infos['ori_img_size_hw'].append(img.shape[:2])
+
+            augmented = pipeline(image=img)
+            im = augmented['image'].to(device)
+
+        images.append(im)
+
+    return images, data_infos, is_batch
 
 
 def show_result_pyplot(model: BaseSegmentor,

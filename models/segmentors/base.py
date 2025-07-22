@@ -62,16 +62,16 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def simple_test(self, img, img_meta, **kwargs):
+    def simple_test(self, img, **kwargs):
         """Placeholder for single image test."""
         pass
 
     @abstractmethod
-    def aug_test(self, imgs, img_metas, **kwargs):
-        """Placeholder for augmentation test."""
+    def batch_test(self, imgs, **kwargs):
+        """Placeholder for multi images test."""
         pass
 
-    def forward_test(self, imgs, img_metas, **kwargs):
+    def forward_test(self, imgs, meta_infos, rescale=True, **kwargs):
         """
         Args:
             imgs (List[Tensor]): the outer list indicates test-time
@@ -81,31 +81,24 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
                 augs (multiscale, flip, etc.) and the inner list indicates
                 images in a batch.
         """
-        for var, name in [(imgs, 'imgs'), (img_metas, 'img_metas')]:
-            if not isinstance(var, list):
-                raise TypeError(f'{name} must be a list, but got '
-                                f'{type(var)}')
+        if meta_infos:
+            ori_img_sizes = meta_infos.get('ori_img_size_hw', None)
 
-        num_augs = len(imgs)
-        if num_augs != len(img_metas):
-            raise ValueError(f'num of augmentations ({len(imgs)}) != '
-                             f'num of image meta ({len(img_metas)})')
-        # all images in the same aug batch all of the same ori_shape and pad
-        # shape
-        for img_meta in img_metas:
-            ori_shapes = [_['ori_shape'] for _ in img_meta]
-            assert all(shape == ori_shapes[0] for shape in ori_shapes)
-            img_shapes = [_['img_shape'] for _ in img_meta]
-            assert all(shape == img_shapes[0] for shape in img_shapes)
-            pad_shapes = [_['pad_shape'] for _ in img_meta]
-            assert all(shape == pad_shapes[0] for shape in pad_shapes)
-
-        if num_augs == 1:
-            return self.simple_test(imgs[0], img_metas[0], **kwargs)
+            if len(imgs) != len(ori_img_sizes):
+                raise ValueError(f'num of images ({len(imgs)}) != '
+                                 f'num of ori_img_sizes ({len(ori_img_sizes)})')
         else:
-            return self.aug_test(imgs, img_metas, **kwargs)
+            ori_img_sizes = None
 
-    def forward(self, img, gt, img_metas, rescale=False, return_loss=True, **kwargs):
+        if len(imgs) == 1:  # 单个图像的推理过程
+            if isinstance(ori_img_sizes, list):
+                return self.simple_test(imgs[0].unsqueeze(0), ori_img_size=ori_img_sizes[0], rescale=rescale, **kwargs)
+            else:
+                return self.simple_test(imgs[0].unsqueeze(0), ori_img_size=ori_img_sizes, rescale=rescale, **kwargs)
+        else:  # 多个图像的推理过程
+            return self.batch_test(imgs, ori_img_size=ori_img_sizes, rescale=rescale, **kwargs)
+
+    def forward(self, img, gt=None, img_metas=None, rescale=True, return_loss=False, **kwargs):
         """Calls either :func:`forward_train` or :func:`forward_test` depending
         on whether ``return_loss`` is ``True``.
 
@@ -118,65 +111,7 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         if return_loss:
             return self.forward_train(img, gt, meta_infos=img_metas, rescale=rescale, **kwargs)
         else:
-            return self.forward_test(img, img_metas, rescale=rescale, **kwargs)
-
-    def train_step(self, data_batch, optimizer, **kwargs):
-        """The iteration step during training.
-
-        This method defines an iteration step during training, except for the
-        back propagation and optimizer updating, which are done in an optimizer
-        hook. Note that in some complicated cases or models, the whole process
-        including back propagation and optimizer updating is also defined in
-        this method, such as GAN.
-
-        Args:
-            data (dict): The output of dataloader.
-            optimizer (:obj:`torch.optim.Optimizer` | dict): The optimizer of
-                runner is passed to ``train_step()``. This argument is unused
-                and reserved.
-
-        Returns:
-            dict: It should contain at least 3 keys: ``loss``, ``log_vars``,
-                ``num_samples``.
-                ``loss`` is a tensor for back propagation, which can be a
-                weighted sum of multiple losses.
-                ``log_vars`` contains all the variables to be sent to the
-                logger.
-                ``num_samples`` indicates the batch size (when the model is
-                DDP, it means the batch size on each GPU), which is used for
-                averaging the logs.
-        """
-        losses = self(**data_batch)
-        loss, log_vars = self._parse_losses(losses)
-
-        outputs = dict(
-            loss=loss,
-            log_vars=log_vars,
-            num_samples=len(data_batch['img_metas']))
-
-        return outputs
-
-    def val_step(self, data_batch, optimizer=None, **kwargs):
-        """The iteration step during validation.
-
-        This method shares the same signature as :func:`train_step`, but used
-        during val epochs. Note that the evaluation after training epochs is
-        not implemented with this method, but an evaluation hook.
-        """
-        losses = self(**data_batch)
-        loss, log_vars = self._parse_losses(losses)
-
-        log_vars_ = dict()
-        for loss_name, loss_value in log_vars.items():
-            k = loss_name + '_val'
-            log_vars_[k] = loss_value
-
-        outputs = dict(
-            loss=loss,
-            log_vars=log_vars_,
-            num_samples=len(data_batch['img_metas']))
-
-        return outputs
+            return self.forward_test(img, meta_infos=img_metas, rescale=rescale, **kwargs)
 
     def show_result(self,
                     img,

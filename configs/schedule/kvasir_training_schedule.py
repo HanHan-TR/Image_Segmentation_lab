@@ -1,7 +1,7 @@
 seed = 123
 deterministic = True
 
-epochs = 60
+epochs = 30
 
 train_batch_size = 16
 val_batch_size = 8
@@ -15,7 +15,7 @@ optimizer = dict(type='SGD',
                  weight_decay=0.0005)
 # learning policy
 lr_config = dict(type='StepLR',
-                 step_size=15,
+                 step_size=10,
                  gamma=0.1)
 
 # runtime settings

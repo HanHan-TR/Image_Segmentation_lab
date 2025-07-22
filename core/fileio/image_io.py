@@ -2,7 +2,7 @@ import io
 import os.path as osp
 import warnings
 from pathlib import Path
-
+from typing import Union, Sequence
 import cv2
 import numpy as np
 from cv2 import (IMREAD_COLOR, IMREAD_GRAYSCALE, IMREAD_IGNORE_ORIENTATION,
@@ -40,6 +40,8 @@ imread_flags = {
 }
 
 imread_backend = 'cv2'
+
+ImageType = Union[str, np.ndarray, Sequence[str], Sequence[np.ndarray]]
 
 
 def use_backend(backend):

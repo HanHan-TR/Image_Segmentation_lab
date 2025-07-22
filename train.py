@@ -19,7 +19,7 @@ from core.initialize import init_random_seed, set_random_seed
 from core.builder import DATASET, LR_SCHEDULER, build_optimizer, build_from_cfg
 from core.evaluation import SegEvaluator
 from core.fileio import parse_and_backup_config, increment_path
-from utils.train_utils import train_one_epoch, validate_one_epoch, save_model
+from utils.train_utils import train_one_epoch, validate_one_epoch, pth_metadata, save_model
 from tools.logger.metadata import get_environment_info
 
 
@@ -145,29 +145,20 @@ def main():
         fits = train_log_vars.get('loss') + val_log_vars.get('loss') \
             + (1 - metrics['decode']['mIoU'] / 100.0) + (1 - metrics['aux']['mIoU'] / 100.0)
         # 保存模型，保存成pth
+        metadata = pth_metadata(metadata=metadata,
+                                epoch=epoch,
+                                fits=fits,
+                                train_log=train_log_vars,
+                                val_log=val_log_vars,
+                                metric=metrics)
         if epoch == 0:
             best_fits = fits
-            save_model(model,
-                       epoch=epoch,
-                       fits=fits,
-                       metadata=metadata,
-                       train_log=train_log_vars,
-                       val_log=val_log_vars,
-                       metric=metrics,
-                       with_aux=False,
-                       save_path=[last_pth, best_pth])
         else:
             if best_fits > fits:
                 best_fits = fits
-                save_model(model,
-                           epoch=epoch,
-                           fits=fits,
-                           metadata=metadata,
-                           train_log=train_log_vars,
-                           val_log=val_log_vars,
-                           metric=metrics,
-                           with_aux=False,
-                           save_path=[last_pth, best_pth])
+                save_model(model, metadata=metadata, save_path=best_pth)
+
+        save_model(model, metadata=metadata, save_path=last_pth)
 
         print('Done')
 
