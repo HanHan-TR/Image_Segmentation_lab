@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 RANK = int(os.getenv('RANK', -1))
 
-from models import build_segmentor
+from models.builder import build_segmentor
 from core.initialize import init_random_seed, set_random_seed
 from core.builder import DATASET, LR_SCHEDULER, build_optimizer, build_from_cfg
 from core.evaluation import SegEvaluator
@@ -142,14 +142,33 @@ def main():
                                                    evaluator=evaluator,
                                                    schedule_cfg=schedule_cfg)
 
+        fits = train_log_vars.get('loss') + val_log_vars.get('loss') \
+            + (1 - metrics['decode']['mIoU'] / 100.0) + (1 - metrics['aux']['mIoU'] / 100.0)
         # 保存模型，保存成pth
-        save_model(model,
-                   metadata=metadata,
-                   train_log=train_log_vars,
-                   val_log=val_log_vars,
-                   metric=metrics,
-                   with_aux=False,
-                   save_path=last_pth)
+        if epoch == 0:
+            best_fits = fits
+            save_model(model,
+                       epoch=epoch,
+                       fits=fits,
+                       metadata=metadata,
+                       train_log=train_log_vars,
+                       val_log=val_log_vars,
+                       metric=metrics,
+                       with_aux=False,
+                       save_path=[last_pth, best_pth])
+        else:
+            if best_fits > fits:
+                best_fits = fits
+                save_model(model,
+                           epoch=epoch,
+                           fits=fits,
+                           metadata=metadata,
+                           train_log=train_log_vars,
+                           val_log=val_log_vars,
+                           metric=metrics,
+                           with_aux=False,
+                           save_path=[last_pth, best_pth])
+
         print('Done')
 
 

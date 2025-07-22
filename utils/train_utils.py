@@ -138,12 +138,15 @@ def validate_one_epoch(epoch, model, data_loader, evaluator, schedule_cfg):
 
 
 def save_model(model,
+               epoch: int,
+               fits: float,
                metadata: Optional[dict] = None,
                train_log: Optional[dict] = None,
                val_log: Optional[dict] = None,
                metric: Optional[dict] = None,
-               with_aux: Optional[bool] = False,
                save_path: str = 'model.pth'):
+    metadata.update(epoch=epoch,
+                    fits=fits)
     train_log = add_prefix(inputs=train_log, prefix='train')
     metadata.update(train_log)
     val_log = add_prefix(inputs=val_log, prefix='val')
@@ -152,8 +155,6 @@ def save_model(model,
     for key, value in metric.items():
         sub_metric = add_prefix(value, prefix='metric.' + key)
         metadata.update(sub_metric)
-
-    metadata.update(with_aux=with_aux)
 
     checkpoint = {'metadata': metadata,
                   'state_dict': weights_to_cpu(model.state_dict())}
